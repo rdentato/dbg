@@ -1,7 +1,7 @@
 # dbg
 Very very minimal debug/testing macro.
 
-
+```
   dbgmsg(char *, ...)        --> Output a message on stderr (works as printf(...)).
                                  If DEBUG is not defined, do nothing.
 
@@ -13,4 +13,5 @@ Very very minimal debug/testing macro.
 
   _dbgchk(test, char *, ...) --> Do nothing. Used to disable a debug message.
 
+```
   Note that NDEBUG has precedence over DEBUG
