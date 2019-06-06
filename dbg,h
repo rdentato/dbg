@@ -6,16 +6,16 @@
 **
 **  *** DEBUG AND TESTING MACROS ***
 **
-**  dbgmsg(char *, ...)        --> Output a message on stderr (works as printf(...)).
+**  dbgmsg(char *, ...)        --> Prints a message on stderr (works as printf(...)).
 **                                 If DEBUG is not defined, do nothing.
 **
-**  dbgchk(test, char *, ...)  --> Perform the test. If test fails and format string is not
-**                                 NULL, prints a message on stderr (works as printf(...)).
+**  dbgchk(test, char *, ...)  --> Perform the test. If test fails prints a message on
+                                   stderr (works as printf(...)).
 **                                 If DEBUG is not defined, do nothing.
 **
-**  _dbgmsg(char *, ...)       --> Do nothing. Used to disable a debug message.
+**  _dbgmsg(char *, ...)       --> Do nothing. Used to disable the debug message.
 **
-**  _dbgchk(test, char *, ...) --> Do nothing. Used to disable a debug message.
+**  _dbgchk(test, char *, ...) --> Do nothing. Used to disable the debug message.
 **
 **  Note that NDEBUG has precedence over DEBUG
 */
@@ -33,23 +33,22 @@
 #include <stdio.h>
 #define dbgmsg(...)   ((fflush(stdout), \
                         fprintf(stderr,__VA_ARGS__), fflush(stderr)))
-
-#define dbg0(_x0,...) _x0 
+                        
 #define dbgchk(e,...) do {int e_=!!(e); \
                           fflush(stdout); /*Ensure dbg message appears after pending stdout prints */ \
                           fprintf(stderr,"%s: (%s)  %s:%d\n",(e_?"PASS":"FAIL"),#e,__FILE__,__LINE__); \
-                          if ((!e_) && (dbg0(__VA_ARGS__,NULL))) {  \
+                          if (!e_) {  \
                             fputs("    : ",stderr); fprintf(stderr,__VA_ARGS__); \
                           } \
                           fflush(stderr); \
-                      } while(0)
+                      } while(0)                      
 #else
 #define dbgmsg(...)
-#define dbgchk(e,...)
+#define dbgchk(e,f,...)
 #endif
 
 #define _dbgmsg(...)
-#define _dbgchk(e,...)
+#define _dbgchk(e,f,...)
 
 /*  ************ TEST SUITE *************
 **  Compile with:
@@ -76,7 +75,7 @@ int main(int argc, char *argv[])
 
   x=2;
   dbgmsg("Testing (1>x) with x=%d (no message on fail)\n",x);
-  dbgchk(1>x,NULL);
+  dbgtst(1>x);
 }
 
 #endif // DBG_TEST
