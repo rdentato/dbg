@@ -26,7 +26,9 @@ be compiled with:
 ```
   cp dbg.h dbgstat.c; cc -DDBGSTAT -Wall -o dbgstat dbgstat.c
 ```
-and use it as a filter. For example:
+and use it as a filter.
+
+For example:
 ```
   myprg 2> my.log
   dbgstat < my.log
@@ -39,11 +41,11 @@ will output (assuming all 12 tests you defined with `dbgcheck(...)` passed):
 ```
 and will return `0` to the shell.  
 
-If there is any failure, `dbgstat` will exit with an error code. This way you can signal you build/integration pipeline that something went wrong.
+If there is any failure, `dbgstat` will exit with an error code. This way you can signal your build/integration pipeline that something went wrong.
 
 ## Self test
 
-  To see `dbg`in action, complie the self test with:
+  To see `dbg`in action, compile the self test with:
   
 ```
   cp dbg.h dbgtest.c
