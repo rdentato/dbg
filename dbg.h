@@ -19,7 +19,7 @@
 **  _dbgchk(test, char *, ...) --> Do nothing. Used to disable the debug message.
 **  _dbgclk { ... }            --> Execute the block but don't measure time.
 **
-**  Note that NDEBUG has precedence over DEBUG
+**  Note that NDEBUG has precedence over DEBUG 
 */
 
 #ifndef __DBG_H__
