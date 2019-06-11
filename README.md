@@ -1,4 +1,5 @@
-# dbg
+# dbg [![Build Status](https://travis-ci.org/rdentato/dbg.svg?branch=master)](https://travis-ci.org/rdentato/dbg)  
+
 Very very minimal debug/testing macro.
 
 ## API
