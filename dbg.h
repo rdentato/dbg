@@ -13,9 +13,11 @@
 **                                 stderr (works as printf(...)).
 **                                 If DEBUG is not defined, do nothing.
 **
-**  _dbgmsg(char *, ...)       --> Do nothing. Used to disable the debug message.
+**  dbgclk { ... }             --> Measure and prints time needed to execute the block
 **
+**  _dbgmsg(char *, ...)       --> Do nothing. Used to disable the debug message.
 **  _dbgchk(test, char *, ...) --> Do nothing. Used to disable the debug message.
+**  _dbgclk { ... }            --> Execute the block but don't measure time.
 **
 **  Note that NDEBUG has precedence over DEBUG
 */
@@ -71,6 +73,7 @@
 
 #endif // __DBG_H__
 
+/*<<<>>>*/
 /*  ************ TESTS STATISTICS *************
 **  Compile with:
 **     cp dbg.h dbgstat.c; cc -DDBGSTAT -Wall -o dbgstat dbgstat.c

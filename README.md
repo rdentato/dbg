@@ -11,11 +11,11 @@ Very very minimal debug/testing macro.
                                  stderr (works as printf(...)).
                                  If DEBUG is not defined, do nothing.
 
-  dbgclk { ... }             --> Prints time needed to execute the block
+  dbgclk { ... }             --> Measure and prints time needed to execute the block
   
   _dbgmsg(char *, ...)       --> Do nothing. Used to disable the debug message.
   _dbgchk(test, char *, ...) --> Do nothing. Used to disable the debug message.
-  _dbgclk                    --> Do not measure time (but still execute the block).
+  _dbgclk { ... }            --> Execute the block but don't measure time.
   
 ```
   Note that NDEBUG has precedence over DEBUG
