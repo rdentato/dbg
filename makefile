@@ -22,12 +22,12 @@ all: dbgstat dbgtest
 
 dbgstat$(_EXE): dbg.h
 	$(CP) dbg.h dbgstat.c
-	$(CC) -DDBGSTAT -O2 -Wall -o dbgstat dbgstat.c
+	$(CC) -DDBGSTAT -O2 -std=c99 -Wall -o dbgstat dbgstat.c
 	$(RM) dbgstat.c
 
 dbgtest$(_EXE): dbg.h
 	$(CP) dbg.h dbgtest.c
-	$(CC) -DDEBUG -DDBGTEST -O2 -Wall -o dbgtest dbgtest.c
+	$(CC) -DDEBUG -DDBGTEST -std=c99 -O2 -Wall -o dbgtest dbgtest.c
 	$(RM) dbgtest.c
 
 runtest: dbgtest$(_EXE) dbgstat$(_EXE)
