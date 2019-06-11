@@ -10,7 +10,7 @@
 **                                 If DEBUG is not defined, do nothing.
 **
 **  dbgchk(test, char *, ...)  --> Perform the test. If test fails prints a message on
-                                   stderr (works as printf(...)).
+**                                 stderr (works as printf(...)).
 **                                 If DEBUG is not defined, do nothing.
 **
 **  _dbgmsg(char *, ...)       --> Do nothing. Used to disable the debug message.
@@ -37,6 +37,8 @@
 
 #ifdef DEBUG
 #include <stdio.h>
+#include <time.h>
+
 #define dbgmsg(...)   ((fflush(stdout), fprintf(stderr,__VA_ARGS__), \
                         fprintf(stderr," \x9%s:%d\n",__FILE__,__LINE__), \
                         fflush(stderr)))
@@ -49,16 +51,25 @@
                             fprintf(stderr,"    : " __VA_ARGS__); \
                           } \
                           fflush(stderr); \
-                      } while(0)                      
+                      } while(0) 
+
+#define dbgclk        for (clock_t dbg_clk = clock(); \
+                           dbg_clk != (clock_t)-1; \
+                           dbgmsg("TIME: %ld/%ld sec.", \
+                                   (long int)(clock()-dbg_clk), (long int)CLOCKS_PER_SEC), \
+                              dbg_clk = (clock_t)-1 )
+
 #else
 #define dbgmsg(...)
 #define dbgchk(e,f,...)
+#define dbgclk
 #endif
 
 #define _dbgmsg(...)
 #define _dbgchk(e,f,...)
+#define _dbgclk 
 
-#endif // DBG_H
+#endif // __DBG_H__
 
 /*  ************ TESTS STATISTICS *************
 **  Compile with:
@@ -110,6 +121,18 @@ int main(int argc, char *argv[])
   x=2;
   dbgmsg("Testing (1>x) with x=%d(no message on fail)",x);
   dbgchk(1>x,"");
+
+  x = 100000;
+  dbgmsg("Testing count to %d",x);
+  dbgclk {
+    for (int k=0; k<x; k++);
+  }
+
+  x = 100000000;
+  dbgmsg("Testing count to %d",x);
+  dbgclk {
+    for (int k=0; k<x; k++);
+  }
 }
 
 #endif // DBG_TEST
