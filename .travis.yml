@@ -5,6 +5,9 @@ install: true
 compiler:
   - clang
   - gcc
+ os:
+  - linux
+  - osx
 notifications:
   webhooks:
     urls: 
