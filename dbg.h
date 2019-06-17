@@ -22,8 +22,8 @@
 **  Note that NDEBUG has precedence over DEBUG 
 */
 
-#ifndef __DBG_H__
-#define __DBG_H__
+#ifndef DBG_H__
+#define DBG_H__
 
 #ifdef DBG
 #ifndef DEBUG
@@ -40,19 +40,21 @@
 #ifdef DEBUG
 #include <stdio.h>
 #include <time.h>
+#include <errno.h>
+
+#define dbgexp(x) x
 
 #define dbgmsg(...)   ((fflush(stdout), fprintf(stderr,__VA_ARGS__), \
                         fprintf(stderr," \x9%s:%d\n",__FILE__,__LINE__), \
                         fflush(stderr)))
 #define dbg0(x,...)   (x)
-#define dbgchk(e,...) do {int e_=!!(e); \
-                          char *f_ = dbg0(__VA_ARGS__);\
-                          fflush(stdout); /*Ensure dbg message appears after pending stdout prints */ \
-                          fprintf(stderr,"%s: (%s) \x9%s:%d\n",(e_?"PASS":"FAIL"),#e,__FILE__,__LINE__); \
-                          if (!e_ && f_ && *f_) {  \
+#define dbgchk(e,...)  do {int e_=!(e); \
+                          fflush(stdout); /* Ensure dbg message appears *after* pending stdout prints */ \
+                          fprintf(stderr,"%s: (%s) \x9%s:%d\n",(e_?"FAIL":"PASS"),#e,__FILE__,__LINE__); \
+                          if (e_ && *(dbgexp(dbg0(__VA_ARGS__)))) {  \
                             fprintf(stderr,"    : " __VA_ARGS__); \
                           } \
-                          fflush(stderr); \
+                          fflush(stderr); errno = e_; \
                       } while(0) 
 
 #define dbgclk        for (clock_t dbg_clk = clock(); \
@@ -60,16 +62,19 @@
                            dbgmsg("TIME: %ld/%ld sec.", \
                                    (long int)(clock()-dbg_clk), (long int)CLOCKS_PER_SEC), \
                               dbg_clk = (clock_t)-1 )
+#define dbgblk(x) x
 
 #else
 #define dbgmsg(...)
 #define dbgchk(e,f,...)
 #define dbgclk
+#define dbgblk(x)
 #endif
 
 #define _dbgmsg(...)
 #define _dbgchk(e,f,...)
 #define _dbgclk 
+#define _dbgblk(x)
 
 #endif // __DBG_H__
 
@@ -84,18 +89,23 @@
 #include <string.h>
 #include <stdlib.h>
 
+#define MAXLEN 1024
+char s[MAXLEN];
+
 int main(int argc, char *argv[])
 {
-  int num_fail = 0, num_pass = 0;
-  char s[8]; char *p; int c;
-  while ((p=fgets(s,7,stdin))) {
-    if (strncmp(p,"PASS: ",6)==0)      num_pass++;
-    else if (strncmp(p,"FAIL: ",6)==0) num_fail++;
-    else while ((c = fgetc(stdin))!=EOF && c != '\n') ; 
+  int n_fail = 0, n_pass = 0;
+  char *p;
+
+  while ((p=fgets(s,MAXLEN,stdin))) {
+         if (strncmp(p,"PASS: ",6)==0) n_pass++; 
+    else if (strncmp(p,"FAIL: ",6)==0) n_fail++; 
   }
-  printf("PASS: %d\nFAIL: %d\n",num_pass,num_fail);
-  exit(num_fail != 0);
+
+  printf("FAIL: %d\nPASS: %d\n",n_fail,n_pass);
+  exit(n_fail != 0);
 }
+
 #endif // DBGSTAT
 
 /*  ************ TEST SUITE *************
@@ -110,20 +120,34 @@ int main(int argc, char *argv[])
   dbgmsg("Test %s (argc: %d)","message 1",argc);
 
   x=0;
-  dbgmsg("Testing (1>x) with x=%d",x);
+  dbgmsg("TEST: (1>x) with x=%d",x);
   dbgchk(1>x,"x=%d\n",x);
 
   x=1;
-  dbgmsg("Testing (1>x) with x=%d",x);
+  dbgmsg("TEST: (1>x) with x=%d",x);
   dbgchk(1>x,"x=%d\n",x);
 
   x=2;
-  dbgmsg("Testing (1>x) with x=%d",x);
+  dbgmsg("TEST: (1>x) with x=%d",x);
   dbgchk(1>x,"x=%d\n",x);
 
-  x=2;
-  dbgmsg("Testing (1>x) with x=%d(no message on fail)",x);
+  dbgblk({
+    int e = errno;
+    if (e) {
+      dbgmsg("Sigh it failed :(%d)",e);
+    }
+  })
+
+  x=3;
+  dbgmsg("TEST: (1>x) with x=%d (no message on fail)",x);
   dbgchk(1>x,"");
+
+  _dbgblk({
+    int e = errno;
+    if (e) {
+      dbgmsg("Sigh it failed: (%d) but I'll never know",e);
+    }
+  })
 
   x = 100000;
   dbgmsg("Testing count to %d",x);
@@ -134,7 +158,7 @@ int main(int argc, char *argv[])
   x = 100000000;
   dbgmsg("Testing count to %d",x);
   dbgclk {
-    for (int k=0; k<x; k++);
+    for (int k=0; k<x; k++) ;
   }
 }
 
