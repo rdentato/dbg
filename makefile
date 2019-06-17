@@ -33,8 +33,9 @@ dbgtest$(_EXE): dbg.h
 	$(RM) dbgtest.c
 
 runtest: dbgtest$(_EXE) dbgstat$(_EXE)
-	./dbgtest 2> dbgtest.log
-	-./dbgstat < dbgtest.log
+	@echo "FAIL: 3 expected on next line"
+	@./dbgtest 2> dbgtest.log
+	@./dbgstat < dbgtest.log | grep "FAIL: 3" 
 
 clean:
 	$(RM) dbgtest$(_EXE) dbgstat$(_EXE)
