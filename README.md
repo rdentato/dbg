@@ -12,12 +12,15 @@ Very very minimal debug/testing macro.
                                  stderr (works as printf(...)).
                                  If DEBUG is not defined, do nothing.
 
-  dbgclk { ... }             --> Measure and prints time needed to execute the block
-  
+  dbgclk { ... }             --> Measure and prints time needed to execute the code block
+
+  dbgblk ({ ... })           --> Execute the block only in DEBUG mode.
+                                 Note how the code is enclosed by '({'  and '})'
+
   _dbgmsg(char *, ...)       --> Do nothing. Used to disable the debug message.
   _dbgchk(test, char *, ...) --> Do nothing. Used to disable the debug message.
-  _dbgclk { ... }            --> Execute the block but don't measure time.
-  
+  _dbgclk { ... }            --> Execute the code block but don't measure time.
+  _dbgblk ({ ... })          --> Do not execute the code block.
 ```
   Note that NDEBUG has precedence over DEBUG
 
