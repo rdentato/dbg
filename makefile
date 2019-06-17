@@ -12,22 +12,24 @@ ifeq "$(COMSPEC)" ""
 _EXE=
 endif
 
-#CC=gcc
+#CC=
 AR=ar -ru
 RM=rm -f
 CP=cp 
 MD=mkdir -p
+#-static -static-libgcc 
+CFLAGS= -DDEBUG -std=c99 -Wall
 
-all: dbgstat dbgtest 
+all: dbgstat$(_EXE) dbgtest$(_EXE)
 
 dbgstat$(_EXE): dbg.h
 	$(CP) dbg.h dbgstat.c
-	$(CC) -DDBGSTAT -O2 -std=c99 -Wall -o dbgstat dbgstat.c
+	$(CC) $(CFLAGS) -DDBGSTAT -O2 -o dbgstat dbgstat.c
 	$(RM) dbgstat.c
 
 dbgtest$(_EXE): dbg.h
 	$(CP) dbg.h dbgtest.c
-	$(CC) -DDEBUG -DDBGTEST -std=c99 -O2 -Wall -o dbgtest dbgtest.c
+	$(CC) $(CFLAGS) -DDBGTEST -O0 -o dbgtest dbgtest.c
 	$(RM) dbgtest.c
 
 runtest: dbgtest$(_EXE) dbgstat$(_EXE)
@@ -36,6 +38,7 @@ runtest: dbgtest$(_EXE) dbgstat$(_EXE)
 
 clean:
 	$(RM) dbgtest$(_EXE) dbgstat$(_EXE)
+	$(RM) dbgtest.c dbgstat.c
 	$(RM) *.log
 
 dbg_mini.h: dbg.h
