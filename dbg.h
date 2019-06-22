@@ -52,7 +52,7 @@
                           fflush(stdout); /* Ensure dbg message appears *after* pending stdout prints */ \
                           fprintf(stderr,"%s: (%s) \x9%s:%d\n",(e_?"FAIL":"PASS"),#e,__FILE__,__LINE__); \
                           if (e_ && *(dbgexp(dbg0(__VA_ARGS__)))) {  \
-                            fprintf(stderr,"    : " __VA_ARGS__); \
+                            fprintf(stderr,"    : " __VA_ARGS__); fputc('\n',stderr);\
                           } \
                           fflush(stderr); errno = e_; \
                       } while(0) 
@@ -121,15 +121,15 @@ int main(int argc, char *argv[])
 
   x=0;
   dbgmsg("TEST: (1>x) with x=%d",x);
-  dbgchk(1>x,"x=%d\n",x);
+  dbgchk(1>x,"x=%d",x);
 
   x=1;
   dbgmsg("TEST: (1>x) with x=%d",x);
-  dbgchk(1>x,"x=%d\n",x);
+  dbgchk(1>x,"x=%d",x);
 
   x=2;
   dbgmsg("TEST: (1>x) with x=%d",x);
-  dbgchk(1>x,"x=%d\n",x);
+  dbgchk(1>x,"x=%d",x);
 
   dbgblk({
     int e = errno;
