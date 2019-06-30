@@ -48,7 +48,7 @@
                         fprintf(stderr," \x9%s:%d\n",__FILE__,__LINE__), \
                         fflush(stderr)))
 #define dbg0(x,...)   (x)
-#define dbgchk(e,...)  do {int e_=!(e); \
+#define dbgchk(e,...)  do {int e_=!(e); errno = 0;\
                           fflush(stdout); /* Ensure dbg message appears *after* pending stdout prints */ \
                           fprintf(stderr,"%s: (%s) \x9%s:%d\n",(e_?"FAIL":"PASS"),#e,__FILE__,__LINE__); \
                           if (e_ && *(dbgexp(dbg0(__VA_ARGS__)))) {  \
@@ -62,7 +62,7 @@
                            dbgmsg("TIME: %ld/%ld sec.", \
                                    (long int)(clock()-dbg_clk), (long int)CLOCKS_PER_SEC), \
                               dbg_clk = (clock_t)-1 )
-#define dbgblk(x) x
+#define dbgblk(x) do { x  ; errno = 0;} while (0);
 
 #else
 #define dbgmsg(...)
@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
   }
 
   printf("FAIL: %d\nPASS: %d\n",n_fail,n_pass);
-  exit(n_fail != 0);
+  exit(n_fail != 0 || n_pass == 0);
 }
 
 #endif // DBGSTAT
@@ -121,15 +121,15 @@ int main(int argc, char *argv[])
 
   x=0;
   dbgmsg("TEST: (1>x) with x=%d",x);
-  dbgchk(1>x,"x=%d",x);
+  dbgchk(1>x,"x=%d\n",x);
 
   x=1;
   dbgmsg("TEST: (1>x) with x=%d",x);
-  dbgchk(1>x,"x=%d",x);
+  dbgchk(1>x,"x=%d\n",x);
 
   x=2;
   dbgmsg("TEST: (1>x) with x=%d",x);
-  dbgchk(1>x,"x=%d",x);
+  dbgchk(1>x,"x=%d\n",x);
 
   dbgblk({
     int e = errno;
