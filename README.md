@@ -5,23 +5,29 @@ Very very minimal debug/testing macro.
 ## API
 
 ```
-  dbgmsg(char *, ...)        --> Output a message on stderr (works as printf(...)).
+   dbgmsg(char *, ...)       --> Prints a message on stderr (works as printf(...)).
                                  If DEBUG is not defined, do nothing.
+ 
+   dbgtst(char *, ...)       --> Starts a test case.
 
-  dbgchk(test, char *, ...)  --> Perform the test. If test fails prints a message on
+   dbgchk(test, char *, ...) --> Perform the test. If test fails prints a message on
                                  stderr (works as printf(...)).
                                  If DEBUG is not defined, do nothing.
-
-  dbgclk { ... }             --> Measure and prints time needed to execute the code block
-
-  dbgblk ({ ... })           --> Execute the block only in DEBUG mode.
-                                 Note how the code is enclosed by '({'  and '})'
+ 
+   dbgclk( ... )             --> Measure the time needed to execute the block.
+                                 If DEBUG is not defined, execute the block but don't 
+                                 measure time.
+                                 Note how the code is enclosed by '( ... )' not '{ ... }'
+ 
+   dbgblk( ... )             --> Execute the block only in DEBUG mode.
+                                 Note how the code is enclosed by '( ... )' not '{ ... }'
 
   _dbgmsg(char *, ...)       --> Do nothing. Used to disable the debug message.
+  _dbgtst(char *, ...)       --> Do nothing. Used to disable the debug message.
   _dbgchk(test, char *, ...) --> Do nothing. Used to disable the debug message.
-  _dbgclk { ... }            --> Execute the code block but don't measure time.
-  _dbgblk ({ ... })          --> Do not execute the code block.
-```
+  _dbgclk( ... )             --> Execute the block but don't measure time.
+  _dbgblk( ... )             --> Do not execute the code block.
+``
   Note that NDEBUG has precedence over DEBUG
 
 ## Statistics

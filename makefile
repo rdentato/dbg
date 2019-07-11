@@ -33,7 +33,7 @@ dbgtest$(_EXE): dbg.h
 	$(RM) dbgtest.c
 
 runtest: dbgtest$(_EXE) dbgstat$(_EXE)
-	@echo "FAIL: 3 expected on next line"
+	@echo "'FAIL: 3' expected on next line"
 	@./dbgtest 2> dbgtest.log
 	@./dbgstat < dbgtest.log | grep "FAIL: 3" 
 
