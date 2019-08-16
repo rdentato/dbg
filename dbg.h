@@ -23,12 +23,6 @@
 **   dbgblk( ... )             --> Execute the block only in DEBUG mode.
 **                                 Note how the code is enclosed by '( ... )' not '{ ... }'
 **
-**   dbgver()                  --> Returns the version as a 4 bytes integer number:
-**                                   VRBB
-**                                   \\\____ Build
-**                                    \\____ Release
-**                                     \____ Version
-**
 **  _dbgmsg(char *, ...)       --> Do nothing. Used to disable the debug message.
 **  _dbgtst(char *, ...)       --> Do nothing. Used to disable the debug message.
 **  _dbgchk(test, char *, ...) --> Do nothing. Used to disable the debug message.
