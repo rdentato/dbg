@@ -1,5 +1,5 @@
 /* 
-**  (C) by Remo Dentato (rdentato@gmail.com)
+**  (C) 2018 by Remo Dentato (rdentato@gmail.com)
 **
 ** This software is distributed under the terms of the MIT license:
 **  https://opensource.org/licenses/MIT
@@ -23,17 +23,24 @@
 **   dbgblk( ... )             --> Execute the block only in DEBUG mode.
 **                                 Note how the code is enclosed by '( ... )' not '{ ... }'
 **
+**   dbgver()                  --> Returns the version as a 4 bytes integer number:
+**                                   VRBB
+**                                   \\\____ Build
+**                                    \\____ Release
+**                                     \____ Version
+**
 **  _dbgmsg(char *, ...)       --> Do nothing. Used to disable the debug message.
 **  _dbgtst(char *, ...)       --> Do nothing. Used to disable the debug message.
 **  _dbgchk(test, char *, ...) --> Do nothing. Used to disable the debug message.
 **  _dbgclk( ... )             --> Execute the block but don't measure time.
 **  _dbgblk( ... )             --> Do not execute the code block.
+**  _dbgver()                  --> Returns 0
 **
-**  Note that NDEBUG has precedence over DEBUG 
+**  Note that if NDEBUG is defined, DEBUG will be undefined
 */
 
-#ifndef DBG_H__
-#define DBG_H__
+#ifndef DBG_VERSION
+#define DBG_VERSION 0x1005
 
 #ifdef NDEBUG
 #ifdef DEBUG
@@ -80,13 +87,13 @@
 
 #define dbgblk(...)      do { { __VA_ARGS__ } errno = 0; } while(0)
 
-#else
+#else // DEBUG
 #define dbgmsg(...)
 #define dbgtst(...)
 #define dbgchk(e,...)
 #define dbgclk(...)      do { __VA_ARGS__ } while(0)
 #define dbgblk(...)
-#endif
+#endif // DEBUG
 
 #define _dbgmsg(...)
 #define _dbgtst(...)
@@ -94,7 +101,7 @@
 #define _dbgclk(...)     do { __VA_ARGS__ } while(0)
 #define _dbgblk(...)
 
-#endif // __DBG_H__
+#endif // DBG_H_VER
 
 /*<<<>>>*/
 /*  ************ TESTS STATISTICS *************
