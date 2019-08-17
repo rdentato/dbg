@@ -34,7 +34,8 @@
 */
 
 #ifndef DBG_VERSION
-#define DBG_VERSION 0x1005
+#define DBG_VERSION 0x0100000C
+#define DBG_VERSION_STR "1.0.0(RC)"
 
 #ifdef NDEBUG
 #ifdef DEBUG
