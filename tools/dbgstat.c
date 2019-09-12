@@ -69,8 +69,7 @@ void trace_start(char *ln)
       _dbgmsg("CAP2: %.*s",skplen(capt,3),skpstart(capt,3));
       if (skplen(capt,4) > 0) {
         watch_t *w = &trk[tnum].watch[trk[tnum].wnum];
-        w->cnt = 0;
-        w->max = (w->min = 1);
+        w->cnt = 0; w->min = 1;  w->max = MAX_MATCH;
         w->pat = skpstart(capt,4);
        *skpend(capt,4)='\0';
         if (skplen(capt,1) > 0)  w->max = (w->min = atoi(skpstart(capt,1)));
@@ -114,18 +113,20 @@ void trace_line(char *ln)
     _dbgmsg("F:%s",f);
   }
 
+  watch_t *w;
   for (int j=tnum-1; j>=0; j--) {
     for(int k=0; k<trk[j].wnum; k++) {
-      _dbgmsg("CHECK: '%s' on '%s'",ln,trk[tnum-1].watch[k].pat);
-      if (skp(ln,trk[j].watch[k].pat)) {
-        trk[j].watch[k].cnt++;
-        if (trk[j].watch[k].cnt > trk[j].watch[k].max) {
+      w=&trk[j].watch[k];
+      _dbgmsg("CHECK: '%s' on '%s'",ln,w->pat);
+      if (skp(ln,w->pat)) {
+        w->cnt++;
+        if (w->cnt > w->max) {
           n_fail++; 
-          dbgprt("FAIL: \"%s\" match %d times (max: %d) %s\n", trk[j].watch[k].pat, trk[j].watch[k].cnt, trk[j].watch[k].max, f);
+          dbgprt("FAIL: \"%s\" match %d times (max: %d) %s\n", w->pat, w->cnt, w->max, f);
         }
-        else if (trk[j].watch[k].cnt >= trk[j].watch[k].min) {
+        else if (w->cnt >= w->min) {
           n_pass++; 
-          dbgprt("PASS: \"%s\" match %d times (min: %d) %s\n", trk[j].watch[k].pat, trk[j].watch[k].cnt, trk[j].watch[k].min, f);
+          dbgprt("PASS: \"%s\" match %d times (min: %d) %s\n", w->pat, w->cnt, w->min, f);
         }
       }
     }
@@ -154,6 +155,7 @@ void trace_init(void)
 {
   for (int i=0; i<TRKNESTMAX; i++) {
     trk[i].wbuf=NULL;
+    trk[i].wnum = 0;
   }
   tnum=0;
 }
@@ -177,7 +179,7 @@ int main(int argc, char *argv[])
     else if (strncmp(p,"TIME: ",6)==0) ;
     else if (strncmp(p,"TRK[: ",6)==0) { if (!(flags & FLG_NOTRACE)) trace_start(p); }
     else if (strncmp(p,"TRK]: ",6)==0) { if (!(flags & FLG_NOTRACE)) trace_end(); }
-    else { if (!(flags & FLG_NOTRACE)) dbgclk trace_line(p); }
+    else {                               if (!(flags & FLG_NOTRACE)) dbgclk trace_line(p); }
   }
 
   dbgprt("STAT: FAIL=%d  PASS=%d",n_fail,n_pass);

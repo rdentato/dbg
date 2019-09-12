@@ -2,6 +2,10 @@
 
 Very very minimal debug/testing macro.
 
+## Using dbg.h
+
+Just include `dbg.h` in your code and define `DEBUG` to the desired level (see below) before compiling.
+
 ## API
 
 ```

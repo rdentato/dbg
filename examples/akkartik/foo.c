@@ -14,8 +14,9 @@
 **      ... scope ...  
 **    }
 ** 
-**   The "assertions" Kartik talks about are "pattern" that 
-** must (or must not) match the lines in the trace.
+**   The "assertions" Kartik talks about are expressed as 
+** "patterns" (pat1, pat2, ...) that must (or must not) match
+** the lines in the trace emitted by the code in the scope.
 **
 **   Actually, what "dbgtrk() {...}" does is just to mark
 ** the portion of the trace we want to examine. The actual
@@ -28,7 +29,7 @@
 **   examples/akkartik> ../../bld foo
 **   examples/akkartik> ./foo 2>&1 | ../../tools/dbgstat.exe
 **
-**  
+**  or just have a look at the foo.log file.
 */
 
 #include <stdlib.h>
