@@ -5,7 +5,7 @@
 ##
 
 _all () {
-  bld -d utl clean
+  bld -d utl all
   bld -d test all
   bld -d tools all
 }

@@ -35,7 +35,7 @@ char *skpmatch(char *s, char *p, skp_t *capt);
 #define skp0(x,...)   (x)
 #define skp1(y,x,...) (x)
 
-typedef struct skp_s {
+struct skp_s {
   int num;
   int cur;
   int max;
@@ -43,7 +43,7 @@ typedef struct skp_s {
     char *start;
     char *end;
   } str[0];
-} skp_t;
+};
 
 static inline skp_t *skpnew(int max)
 { skp_t *capt;
