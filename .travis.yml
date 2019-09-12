@@ -1,6 +1,6 @@
 sudo: required
 language: c
-script: ./bld all
+script: chmod +x ./bld ; ./bld all
 install: true
 compiler:
   - clang
