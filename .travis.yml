@@ -1,6 +1,6 @@
 sudo: required
 language: c
-script: make runtest
+script: ./bld all
 install: true
 compiler:
   - clang
