@@ -8,17 +8,20 @@ _all () {
   bld tests
 }
 
+setflags_ () {
+  DBGFLAGS="-DDEBUG=DBGLVL_TEST"
+}
+
 _tests () {
   local f
   local t
-  CFLAGS="$CFLAGS -I../src -DDEBUG"
+  setflags_
   for f in $(ls ut_*.c); do
     t=${f:1}
     t=${t%.*}$_EXE
     echo "Building target: '${t%.*}'" >&2
-    bld_old $t $f ../src/dbg.h && {
-      $RM ${f%.*}.o
-      cc_exe $t ${f%.*}.o
+    bld_old $t $f ../utl/dbg.h && {
+      cc_exe -f $t ${f%.*}.o
     }
   done
 }
@@ -26,13 +29,12 @@ _tests () {
 _default () {
   local f
   local t
-  CFLAGS="$CFLAGS -I../src -DDEBUG"
   f=u$1.c
   t=$1$_EXE
+  setflags_
   echo "Building target: '${t%.*}'" >&2
-  bld_old $t $f ../src/dbg.h && {
-    $RM ${f%.*}.o
-    cc_exe $t ${f%.*}.o
+  bld_old $t $f ../utl/dbg.h && {
+    cc_exe -f $t ${f%.*}.o
   }
 }
 
