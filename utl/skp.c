@@ -649,7 +649,7 @@ invalid:
 
 char *skpmatch(char *s, char *pat, skp_t *capt)
 {
-  int anywhere = 0;
+  int anywhere = 1;
   char *next = NULL;
   char *start = s;
 
@@ -669,12 +669,12 @@ char *skpmatch(char *s, char *pat, skp_t *capt)
   args.pat_err = NULL;
   args.capt    = capt;
 
-  _dbgmsg("MATCHING: [%s] [%s] (start)",start,pat);
+  dbgmsg("MATCHING: [%s] [%s] (start)",start,pat);
   
   if (!s || !pat) return NULL;
 
-  if ((pat[0] == '%') && (pat[1] == '>')) {
-    pat+=2;  anywhere = 1;  _dbgmsg("MATCHING ANYWHERE");
+  if ((pat[0] == '%') && (pat[1] == '^')) {
+    pat+=2;  anywhere = 0;  dbgmsg("MATCHING ANYWHERE DISABLED");
   }
 
   do {

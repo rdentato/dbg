@@ -7,8 +7,8 @@
 */
 
 #ifndef SKP_VERSION 
-#define SKP_VERSION      0x0002000B
-#define SKP_VERSION_STR "skp 0.2.0-beta"
+#define SKP_VERSION      0x0003000B
+#define SKP_VERSION_STR "skp 0.3.0-beta"
 
 #include <string.h>
 #include <ctype.h>

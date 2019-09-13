@@ -1,16 +1,11 @@
-TRK[: "+:%>foo:%_%D" "0:%>foo:%_0" 	foo.c:55
-INFO: foo: 12 	foo.c:38
-PASS: "%>foo:%_%D" match 1 times (min: 1) 	foo.c:38
-INFO: foo:43 	foo.c:43
-PASS: "%>foo:%_%D" match 2 times (min: 1) 	foo.c:43
-TRK]:  	foo.c:55
-TRK[: "0:%>foo:%_0" 	foo.c:59
-INFO: foo: 0 	foo.c:38
-FAIL: "%>foo:%_0" match 1 times (max: 0) 	foo.c:38
-INFO: foo:43 	foo.c:43
-TRK]:  	foo.c:59
-TRK[: ":%>foo:%_%D" 	foo.c:63
-INFO: bar: 21 	foo.c:48
-TRK]:  	foo.c:63
-FAIL: "%>foo:%_%D" match 0 times (min: 1) 	foo.c:63
-STAT: FAIL=2  PASS=2
+TRK[: ":foo:%_%D" "0:foo:%_0" 	foo.c:56
+INFO: foo: 12 	foo.c:39
+INFO: foo:43 	foo.c:44
+TRK]:  	foo.c:56
+TRK[: "0:foo:%_0" 	foo.c:60
+INFO: foo: 0 	foo.c:39
+INFO: foo:43 	foo.c:44
+TRK]:  	foo.c:60
+TRK[: ":foo:%_%D" 	foo.c:64
+INFO: bar: 21 	foo.c:49
+TRK]:  	foo.c:64

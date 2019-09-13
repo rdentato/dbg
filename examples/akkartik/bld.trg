@@ -9,7 +9,7 @@ _all () {
 }
 
 _foo () {
-  bld -d ../../tools -D DBGFLAGS="-DDEBUG=DBGLVL_ERROR" dbgstat
+  bld -d ../../tools -D DBGFLAGS="-DDEBUG=DBGLVL_INFO" dbgstat
   CCFLAGS="$CCFLAGS -DDEBUG=DBGLVL_TEST"
   bld_old foo$_EXE foo.c && {
     cc_exe foo$_EXE foo.o
