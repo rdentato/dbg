@@ -6,24 +6,22 @@
 
 _all () {
   bld foo
+  bld bar
 }
 
-_foo () {
+_default () {
   bld -d ../../tools -D DBGFLAGS="-DDEBUG=DBGLVL_INFO" dbgstat
   CCFLAGS="$CCFLAGS -DDEBUG=DBGLVL_TEST"
-  bld_old foo$_EXE foo.c && {
-    cc_exe foo$_EXE foo.o
+  bld_old $1$_EXE $1.c && {
+    cc_exe $1$_EXE $1.o
   }
 }
 
-_foo_example () {
-  echo  
-}
 
 _clean () {
   bld_cmd $RM *.o
   bld_cmd $RM foo*$_EXE
-  bld_cmd $RM *.log
+  bld_cmd $RM bar*$_EXE
 }
 
 _cleanall () {
