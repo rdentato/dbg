@@ -2,4 +2,4 @@
 
 Very minimal debug/testing macro.
 
-Read the dbg.h source file for the full documentation
+Read the [dbg.h](https://github.com/rdentato/dbg/blob/master/src/dbg.h) source file for the full documentation
