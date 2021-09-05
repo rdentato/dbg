@@ -13,59 +13,63 @@
 
 #include "dbg.h"
 
-
 int main(int argc, char *argv[])
 {
   int volatile x;
 
-  dbgmsg("Testing %s (argc: %d)","dbg library",argc);
+  dbginf("Testing %s (argc: %d)","dbg library",argc);
   dbgchk(1,"");
 
   x=0;
-  dbgtst("(1>x) with x=%d",x);
-  dbgchk(1>x,"x=%d",x);
+  dbgtst("(1>x) with x=%d",x) {
+    dbgchk(1>x,"x=%d",x);
+  }
 
   x=1;
-  dbgtst("(1>x) with x=%d",x);
-  dbgchk(1>x,"x=%d",x);
+  dbgtst("(1>x) with x=%d",x) {
+    dbgchk(1>x,"x=%d",x);
+  }
 
   x=2;
-  dbgtst("(1>x) with x=%d",x);
-  dbgchk(1>x,"x=%d",x);
+  dbgtst("(1>x) with x=%d",x) {
+    dbgchk(1>x,"x=%d",x);
+  }
 
   dbgblk {
     int e = errno, x=0;
     if (e) {
-      dbgmsg("Sigh it failed (%d)",e-x);
+      dbginf("Sigh it failed (%d)",e-x);
     }
   }
 
   x=3;
-  dbgtst("(1>x) with x=%d (no message on fail)",x);
-  dbgchk(1>x,"");
+  dbgtst("(1>x) with x=%d (no message on fail)",x) {
+     dbgchk(1>x,"");
+  }
 
   _dbgblk {
     int e = errno;
     if (e) {
-      dbgmsg("Sigh it failed: (%d) but I'll never know (%d)",e,x);
+      dbginf("Sigh it failed: (%d) but I'll never know (%d)",e,x);
     }
   }
 
-  dbgtst("dbgclk prints the time");
-  dbgclk;
+  dbgtst("Testing Clock") {
+    dbgclk("dbgclk prints the time");
+  dbgmsg("1-----");
+  
+    x = 100000;
+    dbgclk("Testing count to %d",x) {
+      for (int k=0; k<x; k++);
+    }
+  dbgmsg("2-----");
+    x = 100000000;
+    dbgclk("Testing count to %d",x) {
+      for (int k=0; k< x; k++) ;
+    }
+      dbgmsg("3-----");
 
-  x = 100000;
-  dbgmsg("Testing count to %d",x);
-  dbgclk {
-    for (int k=0; k<x; k++);
   }
-
-  x = 100000000;
-  dbgmsg("Testing count to %d",x);
-  dbgclk {
-    for (int k=0; k< x; k++) ;
-  }
-
 }
 
 

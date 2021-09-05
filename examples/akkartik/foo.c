@@ -53,15 +53,15 @@ int bar(int x) {
 void test_foo() {
            // expect 1 or mores string matching that pattern
           //              // expect no string matching this pattern
-  dbgtrk(":foo:%_%D", "0:foo:%_0") {
-    fooA(12); // This will PASS
+  dbgtrk("=foo:$S$d" "$," "!foo:$S0") {
+    fooA(12); // This will PASS  
     fooB(43); // This will PASS
   }
-  dbgtrk("0:foo:%_0") { // Here we only care ffor not having 0 as an argument
+  dbgtrk("!foo:$0") { // Here we only care for not having 0 as an argument
     fooA(0);  // This will FAIL
     fooB(43); // This will be ignored
   }
-  dbgtrk(":foo:%_%D") { // This will FAIL
+  dbgtrk("!foo:$w$D$a" "$,"  "!sd" "$,"  "sllll") { // This will FAIL
     bar(21);  
   }
 }
@@ -71,3 +71,4 @@ int main (int argc, char *argv[])
   test_foo();
   exit(0);
 }
+ 
