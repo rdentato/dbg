@@ -1,0 +1,5 @@
+statement: The old src/dbg.c placeholder was removed as useless. The current library surface is header-only in src/dbg.h, while future reporting should be implemented separately as dbgstat.c.
+trigger: User removed dbg.c and clarified it was useless.
+status: active
+tags: [dbg, header-only, dbgstat, cleanup]
+created: 2026-04-25

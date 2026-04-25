@@ -25,14 +25,23 @@
 //  ## Usage
 //  To enable the debugging functions, DEBUG must be defined before 
 //  including dbg.h. See section "## Debugging levels" for more details.
+//  To enable memory allocation debugging, define DEBUG_ALLOC.
 //
-//  Note that NDEBUG has higher priority than DEBUG: if NDEBUG
-//  is defined, then DEBUG will be undefined.
+//  Note that NDEBUG has higher priority than DEBUG and DEBUG_ALLOC:
+//  if NDEBUG is defined, then DEBUG and DEBUG_ALLOC will be undefined.
 
 #ifdef NDEBUG
 #ifdef DEBUG
 #undef DEBUG
 #endif
+#ifdef DEBUG_ALLOC
+#undef DEBUG_ALLOC
+#endif
+#endif
+
+// Set it to DBGLVL_ERROR
+#if defined(DEBUG_ALLOC) && !defined(DEBUG)
+#define DEBUG 0
 #endif
 
 // ## Disabling functions
@@ -105,15 +114,15 @@ static volatile int dbg = 0;
 //                 DBGLVL_WARN   as above plus dbgwrn()
 //                 DBGLVL_INFO   as above plus dbginf()
 //                 DBGLVL_TEST   dbg functions except dgptr()
-//                 DBGLVL_MEM    all dbg functions plus redefinition
-//                               of malloc(), free(), realloc(),
-//                               calloc(), strdup() and strndup()
+//
+//   DEBUG_ALLOC  Enables redefinition of malloc(), free(), realloc(),
+//                calloc(), strdup() and strndup(). Implies DEBUG if
+//                DEBUG is not already defined.
 
 #define DBGLVL_ERROR 0
 #define DBGLVL_WARN  1
 #define DBGLVL_INFO  2
 #define DBGLVL_TEST  3
-#define DBGLVL_MEM   4
 
 // ## Printing messages
 //
@@ -191,7 +200,7 @@ static volatile int dbg = 0;
 //  Consider the following test that checks that the string "INGESTION SUCCESSFUL" 
 //  appears in the log but not one of the other two strings:
 //
-//    dbgtrk(",=INGESTION SUCCESSFUL" ",!INGESTION FAILED" ",!INGESTION HALTED") {
+//    dbgtrk("=INGESTION SUCCESSFUL","!INGESTION FAILED","!INGESTION HALTED") {
 //      ... some code and function calls
 //    }
 // 
@@ -212,31 +221,29 @@ static volatile int dbg = 0;
 //  too great of an impact on the performance. Instead the check is done on the 
 //  log itself by the `dbgstat` tool (see `dbgstat.c`). 
 //
-//   dbgtrk(char *) {...}    Specify the strings to be tracked within the scope of the
+//   dbgtrk(...) {...}    Specify the strings to be tracked within the scope of the
 //                           block. If DEBUG is not defined or lower than DBGLVL_TEST,
 //                           execute the block but don't mark track strings.
 //                           
-//                           Theres NO comma between the strings, the separator is 
-//                           the first character of the first pattern.
-//                             Example: dbgtrk(",!test" ",=prod") {
+//                           Example: dbgtrk("!test","=prod") {
 //                                        ...
-//                                      }
+//                                    }
 //
-//  _dbgtrk(char *) {...}    Execute the block but don't mark string tracking.
+//  _dbgtrk(...) {...}    Execute the block but don't mark string tracking.
 //
 
 #undef dbgtrk
-#define dbgtrk(x)  for (int dbg_trk=!dbgmsg("TRK[: %s",x); \
-                          dbg_trk;                                  \
-                          dbg_trk=dbgmsg("TRK]:"))
+#define dbgtrk(...)  for (int dbg_trk=!dbgmsg("TRK[: %s", #__VA_ARGS__); \
+                            dbg_trk;                                  \
+                            dbg_trk=dbgmsg("TRK]:"))
 
 // ## Profiling
-//  The `dbgchk` function is intended as a quick and dirty way to determine the elapsed time
+//  The `dbgclk` function is intended as a quick and dirty way to determine the elapsed time
 //  spent in a block of code. It's accuracy depends on the implementation of the `clock()`
 //  function. The elapsed time is reported as a fraction:
 //     Examples:
-//        CLK]: +64000/1000000 sec. ut_test.c:67   -> 64 milliseconds
-//        CLK]: +64/1000 sec. ut_test.c:67         -> 64 milliseconds
+//        CLK]: +64000/1000000 sec. t_test.c:67   -> 64 milliseconds
+//        CLK]: +64/1000 sec. t_test.c:67         -> 64 milliseconds
 //
 //   dbgclk(char *, ...) {...}     Measure the time needed to execute the block. If DEBUG is
 //                                 undefined or lower than DBGLVL_TEST, execute the block but
@@ -298,11 +305,11 @@ typedef struct {
 
 #endif // DEBUG >= DBGLVL_TEST
 
-#if DEBUG >= DBGLVL_MEM
+#ifdef DEBUG_ALLOC
 
 // ## Memory usage
 //  
-//  If DEBUG is set to DBGLVL_MEM, each call to the memory
+//  If DEBUG_ALLOC is defined, each call to the memory
 //  related functions will produce a line in the log like this:
 //
 //       MTRK: function(args) ptr_in size ptr_out
@@ -447,7 +454,7 @@ static inline void *dbg_memset(void *dest, int c, size_t size, char *file, int l
 #undef  dbgptr
 #define dbgptr(p) dbgmsg("MCHK: ptr %zX", dbg_p(p))
 
-#endif // DEBUG >= DBGLVL_MEM
+#endif // DEBUG_ALLOC
 
 
 #endif  // DEBUG

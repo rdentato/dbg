@@ -2,7 +2,7 @@
 ** See:  http://akkartik.name/post/tracing-tests
 **
 ** Quoting Kartik from the page above:
-**   "I've been experimenting with a new approach [...]. 
+**   "I've been experimenting with a new approach [...].
 **    Rather than pass in specific inputs and make
 **    assertions on the outputs, I modify code to
 **    judiciously print to a trace and make assertions
@@ -11,10 +11,10 @@
 ** dbg implements this approach via the dbgtrk() instruction:
 **
 **    dbgtrk(pat1, pat2, pat3, ...) {
-**      ... scope ...  
+**      ... scope ...
 **    }
-** 
-**   The "assertions" Kartik talks about are expressed as 
+**
+**   The "assertions" Kartik talks about are expressed as
 ** "patterns" (pat1, pat2, ...) that must (or must not) match
 ** the lines in the trace emitted by the code in the scope.
 **
@@ -22,7 +22,7 @@
 ** the portion of the trace we want to examine. The actual
 ** tracking is done by the 'dbgstat' program in the 'tools'
 ** directory.
-**  
+**
 **  To see it in action, compile everything with:
 **
 **   examples/akkartik> ../../bld cleanall
@@ -53,16 +53,16 @@ int bar(int x) {
 void test_foo() {
            // expect 1 or mores string matching that pattern
           //              // expect no string matching this pattern
-  dbgtrk("=foo:$S$d" "$," "!foo:$S0") {
-    fooA(12); // This will PASS  
+  dbgtrk("=foo:$S$d", "!foo:$S0") {
+    fooA(12); // This will PASS
     fooB(43); // This will PASS
   }
   dbgtrk("!foo:$0") { // Here we only care for not having 0 as an argument
     fooA(0);  // This will FAIL
     fooB(43); // This will be ignored
   }
-  dbgtrk("!foo:$w$D$a" "$,"  "!sd" "$,"  "sllll") { // This will FAIL
-    bar(21);  
+  dbgtrk("!foo:$w$D$a", "!sd", "sllll") { // This will FAIL
+    bar(21);
   }
 }
 
@@ -71,4 +71,4 @@ int main (int argc, char *argv[])
   test_foo();
   exit(0);
 }
- 
+

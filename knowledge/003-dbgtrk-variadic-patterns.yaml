@@ -1,0 +1,5 @@
+statement: dbgtrk is a variadic macro that accepts trace patterns as separate arguments and emits the stringized argument list in the TRK marker. Call sites should use dbgtrk("pattern1", "pattern2") rather than adjacent string literals with separators.
+trigger: User manually changed dbg.h so dbgtrk uses variadic arguments and requested dependent files be updated.
+status: active
+tags: [dbgtrk, tracing, macros, api]
+created: 2026-04-25

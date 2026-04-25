@@ -1,0 +1,5 @@
+statement: Memory allocation debugging is controlled by DEBUG_ALLOC instead of a DEBUG level. Defining DEBUG_ALLOC enables allocation/memory wrappers and implies DEBUG at error-level behavior if DEBUG was not already defined.
+trigger: User requested decoupling memory debugging from the DEBUG level ladder and chose option 1.
+status: active
+tags: [debug, allocation, macros, api]
+created: 2026-04-25
