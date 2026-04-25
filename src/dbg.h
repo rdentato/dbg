@@ -1,26 +1,15 @@
 /* 
-**  (C) 2018 by Remo Dentato (rdentato@gmail.com)
+**  (C) 2026 by Remo Dentato (rdentato@gmail.com)
 **
 ** This software is distributed under the terms of the MIT license:
 **  https://opensource.org/licenses/MIT
 */
 
 //  # DEBUG AND TESTING MACROS
-//
-// ## Index
-//     - ## Usage
-//     - ## Disabling functions
-//     - ## Debugging Levels
-//     - ## No DEBUG
-//     - ## Testing
-//     - ## Tracking
-//     - ## Profiling
-//     - ## Grouping
-//     - ## Memory usage
 
 #ifndef DBG_VERSION
-#define DBG_VERSION     0x0103000C
-#define DBG_VERSION_STR "dbg 1.3.0-rc"
+#define DBG_VERSION     0x0201000C
+#define DBG_VERSION_STR "dbg 2.1.0-rc"
 
 //  ## Usage
 //  To enable the debugging functions, DEBUG must be defined before 
@@ -56,10 +45,11 @@
 
 #define DBG_OFF(...)
 
-#define _dbgmsg DBG_OFF
+#define _dbg_msg DBG_OFF
 #define _dbgprt DBG_OFF
 #define _dbgtst DBG_OFF
 #define _dbginf DBG_OFF
+#define _dbgvrb DBG_OFF
 #define _dbgwrn DBG_OFF
 #define _dbgerr DBG_OFF
 #define _dbgchk DBG_OFF
@@ -74,10 +64,10 @@
 // to ensure the code still compiles, but they should do nothing.
 
 #define DBG_ON  DBG_OFF
-#define dbgmsg _dbgmsg
 #define dbgprt _dbgprt
 #define dbgtst _dbgtst
 #define dbginf _dbginf
+#define dbgvrb _dbgvrb
 #define dbgtrk _dbgtrk
 #define dbgwrn _dbgwrn
 #define dbgerr _dbgerr
@@ -100,7 +90,7 @@
 
 // This variable will always be 0. It's used to suppress warnings
 // and ensures that some debugging code is not optimized.
-static volatile int dbg = 0;  
+static volatile int dbg_zero = 0;
 
 // ## Debugging Level
 //
@@ -110,7 +100,7 @@ static volatile int dbg = 0;
 //
 //                     level         enabled functions
 //                 ------------  --------------------------
-//                 DBGLVL_ERROR  dbgerr() dbgmsg() dbgprt()
+//                 DBGLVL_ERROR  dbgerr() dbgprt() dbgvrb()
 //                 DBGLVL_WARN   as above plus dbgwrn()
 //                 DBGLVL_INFO   as above plus dbginf()
 //                 DBGLVL_TEST   dbg functions except dgptr()
@@ -127,30 +117,38 @@ static volatile int dbg = 0;
 // ## Printing messages
 //
 //   dbgprt(char *, ...)      Prints a message on stderr (works as printf(...)).
-//   dbgmsg(char *, ...)      Prints a message on stderr (works as printf(...)).
-//                            Adds filename and line of the instruction.
+//   dbg_msg(char *, ...)     Internal message primitive that adds filename and line.
+//   dbgvrb(char *, ...) {...} Marks enclosed stderr output as program output.
 //   dbginf(char *, ...)      Prints an "INFO:" message depending on the DEBUG level.
 //   dbgwrn(char *, ...)      Prints a  "WARN:" message depending on the DEBUG level.
 //   dbgerr(char *, ...)      Prints a  "FAIL:" message.
 
 #undef  dbgprt
-#define dbgprt(...)  (fprintf(stderr,__VA_ARGS__), dbg=0)
+#define dbgprt(...)  (fprintf(stderr,__VA_ARGS__), dbg_zero)
 
-#undef  dbgmsg
-#define dbgmsg(...)  (fprintf(stderr,__VA_ARGS__),     \
+#undef  dbg_msg
+#define dbg_msg(...)  (fprintf(stderr,__VA_ARGS__),     \
                       fprintf(stderr," \xF%s:%d\n",__FILE__,__LINE__), \
-                      dbg=0)
+                      dbg_zero)
 #undef  dbgerr
-#define dbgerr(...)   dbgmsg("FAIL: " __VA_ARGS__)
+#define dbgerr(...)   dbg_msg("EROR: " __VA_ARGS__)
+
+#undef  dbgvrb
+#define dbgvrb(...)   for (int dbg_ = 1; \
+                        dbg_ && !dbg_msg("VRB[: " __VA_ARGS__); \
+                        dbg_ = (fputs("VRB]:\n",stderr) , 0))
+
+// Use dbgvrb() around code that intentionally writes to stderr so dbgstat
+// can distinguish program output from dbg-generated diagnostics.
 
 #if DEBUG >= DBGLVL_WARN
 #undef  dbgwrn
-#define dbgwrn(...)   dbgmsg("WARN: " __VA_ARGS__)
+#define dbgwrn(...)   dbg_msg("WARN: " __VA_ARGS__)
 #endif
 
 #if DEBUG >= DBGLVL_INFO
 #undef  dbginf
-#define dbginf(...)   dbgmsg("INFO: " __VA_ARGS__)
+#define dbginf(...)   dbg_msg("INFO: " __VA_ARGS__)
 #endif
 
 // ## Testing 
@@ -158,11 +156,12 @@ static volatile int dbg = 0;
 //                                 If DEBUG is undefined or lower than DBGLVL_TEST, do nothing.
 //                                 Stastics will be collected separately for each test case by dbgstat
 //
-//   dbgchk(test, char *, ...)     Perform the test and set errno (0: ok, 1: ko). If test fails
-//                                 prints a message on stderr (works as printf(...)).
+//   dbgchk(test)                  Perform the test and set errno (0: ok, 1: ko).
+//   dbgchk(test, char *, ...)     As above, and if test fails prints a message
+//                                 on stderr (works as printf(...)).
 //                                 If DEBUG is undefined or lower than DBGLVL_TEST, do nothing.
 // 
-//   dbgmst(test, char *, ...)     As dbgchk() but if test fails exit the program with abort().
+//   dbgmst(test, ...)             As dbgchk() but if test fails exit the program with abort().
 // 
 //   dbgblk {...}                  Execute the block only if DEBUG is defined as DBGLVEL_TEST.
 //
@@ -171,15 +170,16 @@ static volatile int dbg = 0;
 
 #undef  dbgtst
 #define dbgtst(...)   for (int dbg_ = 1; \
-                        dbg_ && !dbgmsg("TST[: " __VA_ARGS__); \
-                        dbg_ = dbgmsg("TST]:")) 
-
+                        dbg_ && !dbg_msg("TST[: " __VA_ARGS__); \
+                        dbg_ = (fputs("TST]:\n",stderr) , 0))
+#define dbg_fst(x,...) x
 #undef  dbgchk
 #define dbgchk(e,...) \
   do { \
     int dbg_err=!(e); \
     fprintf(stderr,"%s: (%s) \xF%s:%d\n",(dbg_err?"FAIL":"PASS"),#e,__FILE__,__LINE__); \
-    if (dbg_err) { fprintf(stderr,"    : " __VA_ARGS__); fputc('\n',stderr); } \
+    char *dbg_errmsg = "" dbg_fst(__VA_ARGS__);\
+    if (dbg_err && (dbg_errmsg[0] != '\0')) { fprintf(stderr,"    ` " __VA_ARGS__); fputc('\n',stderr); } \
     errno = dbg_err; \
   } while(0)
 
@@ -187,7 +187,7 @@ static volatile int dbg = 0;
 #define dbgmst(e,...)  do { dbgchk(e,__VA_ARGS__); if (errno) abort();} while(0)
 
 #undef  dbgblk
-#define dbgblk     if (dbg) ; else
+#define dbgblk     if (dbg_zero) ; else
 
 // ## Tracking
 //  Tracking is inspired to a novel idea presented by Kartik Agaram in his blog
@@ -233,9 +233,9 @@ static volatile int dbg = 0;
 //
 
 #undef dbgtrk
-#define dbgtrk(...)  for (int dbg_trk=!dbgmsg("TRK[: %s", #__VA_ARGS__); \
+#define dbgtrk(...)  for (int dbg_trk=!dbg_msg("TRK[: %s", #__VA_ARGS__); \
                             dbg_trk;                                  \
-                            dbg_trk=dbgmsg("TRK]:"))
+                            dbg_trk=(fputs("TRK]:",stderr),0))
 
 // ## Profiling
 //  The `dbgclk` function is intended as a quick and dirty way to determine the elapsed time
@@ -265,12 +265,12 @@ typedef struct {
        (dbg_.elapsed < 0) && ( \
           time(&dbg_.time), dbg_.time_tm=localtime(&dbg_.time),    \
           strftime(dbg_.tstr,32,"%Y-%m-%d %H:%M:%S",dbg_.time_tm),\
-          dbgprt("CLK[: %s ",dbg_.tstr), dbgmsg(__VA_ARGS__) , \
+          dbgprt("CLK[: %s ",dbg_.tstr), dbg_msg(__VA_ARGS__) , \
           dbg_.clk = clock() \
        ) ;   \
       \
        dbg_.elapsed=(long int)(clock()-dbg_.clk),               \
-       dbgmsg("CLK]: +%ld/%ld sec.", dbg_.elapsed, (long int)CLOCKS_PER_SEC) \
+       fprintf(stderr,"CLK]: +%ld/%ld sec.\n", dbg_.elapsed, (long int)CLOCKS_PER_SEC) \
      )
 
 // ## Grouping
@@ -284,7 +284,7 @@ typedef struct {
 //  In case like this, you can plan in advance and define a "debugging 
 //  group". An example may clarify the concept better:
 // 
-//      // Group to debug/trace ingestion phase
+//      /* Group to debug/trace ingestion phase */
 //      #define DBG_CHECK_INGEST DBG_ON  
 //      ...
 //      DBG_CHECK_INGEST(dbgchk(dataread > 0,"No data read! (%d)",dataread));
@@ -452,7 +452,7 @@ static inline void *dbg_memset(void *dest, int c, size_t size, char *file, int l
 #define memmove(d,s,n)  dbg_memmove(d,s,n,__FILE__, __LINE__)
 
 #undef  dbgptr
-#define dbgptr(p) dbgmsg("MCHK: ptr %zX", dbg_p(p))
+#define dbgptr(p) dbg_msg("MCHK: ptr %zX", dbg_p(p))
 
 #endif // DEBUG_ALLOC
 

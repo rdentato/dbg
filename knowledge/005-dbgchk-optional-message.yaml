@@ -1,0 +1,5 @@
+statement: dbgchk and dbgmst support an optional formatted failure message. dbgchk(expr) is valid and emits only the PASS/FAIL line, while dbgchk(expr, message, ...) prints the message only when the check fails.
+trigger: User changed dbg.h so dbgchk can accept a single argument and requested documentation updates.
+status: active
+tags: [dbgchk, dbgmst, tests, api]
+created: 2026-04-25

@@ -1,16 +1,8 @@
-- `AGENTS.md`: add workspace agent instructions so future AI-assisted sessions use the project conventions.
-- `NOTES.md`: record session context, decisions, and verification results for the current AI-assisted work.
-- `docs/project-description.md`: document the header-only project structure, `DEBUG_ALLOC`, variadic `dbgtrk`, usage, verification, and known gaps.
-- `examples/akkartik/foo.c`: update trace-pattern calls to the new variadic `dbgtrk(...)` API.
-- `knowledge/001-debug-alloc-decoupled-memory.yaml`: preserve the decision to decouple allocation debugging behind `DEBUG_ALLOC`.
-- `knowledge/002-dbgstat-reporting-later.yaml`: preserve the decision to keep reporting out of `dbg.h` and implement it later in `dbgstat.c`.
-- `knowledge/003-dbgtrk-variadic-patterns.yaml`: preserve the variadic `dbgtrk(...)` API convention.
-- `knowledge/004-dbg-c-removed-header-only.yaml`: preserve the decision that `src/dbg.c` was removed and the project is currently header-only.
-- `src/dbg.c`: remove the obsolete incomplete C placeholder.
-- `src/dbg.h`: add `DEBUG_ALLOC`, remove `DBGLVL_MEM`, make `dbgtrk` variadic, and update related documentation comments.
-- `test/makefile`: add the current test build rules for `t_*.c` samples.
-- `test/t_test.c`: add the renamed test/profiling sample source.
-- `test/t_trace.c`: add the renamed trace sample source using variadic `dbgtrk(...)`.
-- `test/ut_test.c`: remove the old test sample path after renaming.
-- `test/ut_trace.c`: remove the old trace sample path after renaming.
+- `src/dbg.h`: document and expose the latest macro behavior: optional `dbgchk` messages, internal-only `dbg_msg`, and public `dbgvrb` blocks for program stderr output.
+- `test/t_test.c`: exercise `dbgchk(expr)` without a message, replace direct `dbgmsg` use with public macros, and add a `dbgvrb` stderr-output example.
+- `docs/project-description.md`: update the project description for version 2.1.0-rc, optional `dbgchk` messages, internal `dbg_msg`, and `dbgvrb` markers.
+- `NOTES.md`: record the current API documentation and verification work.
+- `knowledge/005-dbgchk-optional-message.yaml`: preserve the decision that `dbgchk` and `dbgmst` accept optional messages.
+- `knowledge/006-dbg-msg-internal-only.yaml`: preserve the decision that `dbg_msg` is internal and `dbgmsg` is not public API.
+- `knowledge/007-dbgvrb-program-stderr-marker.yaml`: preserve the purpose of `dbgvrb` as a marker for expected program stderr output.
 - `CHANGES.md`: summarize the files and rationale for this commit.

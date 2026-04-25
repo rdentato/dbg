@@ -1,6 +1,6 @@
 # Current Context
 
-- Updated dependent files for variadic `dbgtrk(...)` trace patterns.
+- Documented `dbgvrb(...) { ... }` as a marker for expected program stderr output.
 
 # Open Questions
 
@@ -38,3 +38,15 @@
 - Completed: Updated project documentation and recorded durable knowledge.
 - Pending: Future `dbgstat.c` implementation for nicer reporting remains separate.
 - Notes: The deleted file was intentionally useless; current library surface is `src/dbg.h`.
+- Worked on: Documenting the new one-argument `dbgchk(expr)` form.
+- Completed: Updated `src/dbg.h` comments, `docs/project-description.md`, and durable knowledge.
+- Pending: None.
+- Notes: `test/t_test.c` now exercises `dbgchk(1>x)` without an explicit message.
+- Worked on: Making the file/line message primitive internal-only.
+- Completed: Replaced `dbgmsg` with internal `dbg_msg` in `src/dbg.h`, removed `dbgmsg` from docs, and updated tests to use public macros.
+- Pending: None.
+- Notes: External code should use `dbgprt`, `dbgerr`, `dbgwrn`, or `dbginf`; `dbg_msg` is reserved for internal macro implementation.
+- Worked on: Documenting the new `dbgvrb(...) { ... }` block macro.
+- Completed: Updated `src/dbg.h` comments and `docs/project-description.md` to describe `VRB` markers for expected program stderr output.
+- Pending: None.
+- Notes: `dbgvrb` is for output classification by later reporting tools, not for generating debug diagnostics itself.

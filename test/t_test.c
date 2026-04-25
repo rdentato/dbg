@@ -18,6 +18,9 @@ int main(int argc, char *argv[])
   int volatile x;
 
   dbginf("Testing %s (argc: %d)","dbg library",argc);
+  dbgvrb("program stderr sample") {
+    fprintf(stderr, "sample program stderr output\n");
+  }
   dbgchk(1,"");
 
   x=0;
@@ -44,7 +47,7 @@ int main(int argc, char *argv[])
 
   x=3;
   dbgtst("(1>x) with x=%d (no message on fail)",x) {
-     dbgchk(1>x,"");
+     dbgchk(1>x);
   }
 
   _dbgblk {
@@ -56,20 +59,18 @@ int main(int argc, char *argv[])
 
   dbgtst("Testing Clock") {
     dbgclk("dbgclk prints the time");
-  dbgmsg("1-----");
+  dbginf("1-----");
   
     x = 100000;
     dbgclk("Testing count to %d",x) {
       for (int k=0; k<x; k++);
     }
-  dbgmsg("2-----");
+  dbginf("2-----");
     x = 100000000;
     dbgclk("Testing count to %d",x) {
       for (int k=0; k< x; k++) ;
     }
-      dbgmsg("3-----");
+      dbginf("3-----");
 
   }
 }
-
-

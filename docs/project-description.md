@@ -45,8 +45,8 @@ This repository appears to be a compact, early-stage or partially restored proje
 Current version identifiers:
 
 ```c
-#define DBG_VERSION     0x0103000C
-#define DBG_VERSION_STR "dbg 1.3.0-rc"
+#define DBG_VERSION     0x0201000C
+#define DBG_VERSION_STR "dbg 2.1.0-rc"
 ```
 
 The header is designed so application code can include debug calls unconditionally. When `DEBUG` is not defined, most `dbg...` macros compile to no-op forms, allowing release builds to retain the same source code without emitting diagnostics.
@@ -58,6 +58,7 @@ The header is designed so application code can include debug calls unconditional
 `test/t_test.c` is a small executable sample for the test and profiling macros. It exercises:
 
 - `dbginf`
+- `dbgvrb`
 - `dbgchk`
 - `dbgtst`
 - `dbgblk`
@@ -92,7 +93,7 @@ Debug behavior is controlled by defining `DEBUG` before including `dbg.h`. The h
 
 | Level | Value | Enabled Behavior |
 |---|---:|---|
-| `DBGLVL_ERROR` | `0` | `dbgerr`, `dbgmsg`, `dbgprt` |
+| `DBGLVL_ERROR` | `0` | `dbgerr`, `dbgprt`, `dbgvrb` |
 | `DBGLVL_WARN` | `1` | Error-level macros plus `dbgwrn` |
 | `DBGLVL_INFO` | `2` | Warning-level macros plus `dbginf` |
 | `DBGLVL_TEST` | `3` | Test, tracking, profiling, and block macros except memory pointer tracing |
@@ -116,10 +117,12 @@ The basic message macros write to `stderr`.
 | Macro | Purpose |
 |---|---|
 | `dbgprt(...)` | Print a formatted message to `stderr`. Similar to `fprintf(stderr, ...)`. |
-| `dbgmsg(...)` | Print a formatted message plus source file and line. |
+| `dbgvrb(...) { ... }` | Mark enclosed program `stderr` output with `VRB` delimiters so it can be distinguished from dbg-generated diagnostics. |
 | `dbgerr(...)` | Print a `FAIL:` message. |
 | `dbgwrn(...)` | Print a `WARN:` message when `DEBUG >= DBGLVL_WARN`. |
 | `dbginf(...)` | Print an `INFO:` message when `DEBUG >= DBGLVL_INFO`. |
+
+`dbg_msg(...)` is the internal primitive used by the public message macros to add source file and line information. It is not part of the public API.
 
 ### Testing
 
@@ -128,8 +131,9 @@ Testing macros are enabled when `DEBUG >= DBGLVL_TEST`.
 | Macro | Purpose |
 |---|---|
 | `dbgtst(...) { ... }` | Start a named test block. It emits test start/end markers. |
-| `dbgchk(expr, ...)` | Evaluate an expression, emit `PASS` or `FAIL`, and set `errno` to `0` or `1`. |
-| `dbgmst(expr, ...)` | Like `dbgchk`, but aborts the program if the check fails. |
+| `dbgchk(expr)` | Evaluate an expression, emit `PASS` or `FAIL`, and set `errno` to `0` or `1`. |
+| `dbgchk(expr, message, ...)` | Like `dbgchk(expr)`, but prints a formatted message when the expression fails. |
+| `dbgmst(expr, ...)` | Like `dbgchk`, but aborts the program if the check fails. The failure message is optional. |
 | `dbgblk { ... }` | Execute a block only when test-level debugging is enabled. |
 
 ### Trace Tracking
@@ -176,10 +180,10 @@ Changing the group definition to `DBG_OFF` compiles those grouped calls out with
 
 For most public macros, `dbg.h` also provides an underscore-prefixed no-op counterpart:
 
-- `_dbgmsg`
 - `_dbgprt`
 - `_dbgtst`
 - `_dbginf`
+- `_dbgvrb`
 - `_dbgwrn`
 - `_dbgerr`
 - `_dbgchk`
@@ -255,7 +259,8 @@ Use the library in another C file:
 
 int main(void) {
   dbgtst("basic arithmetic") {
-    dbgchk(1 + 1 == 2, "unexpected arithmetic result");
+    dbgchk(1 + 1 == 2);
+    dbgchk(2 + 2 == 5, "unexpected arithmetic result");
   }
 }
 ```

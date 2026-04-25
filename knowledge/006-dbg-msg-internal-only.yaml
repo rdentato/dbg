@@ -1,0 +1,5 @@
+statement: dbg_msg is the internal file/line message primitive used by dbg.h macros. dbgmsg is not part of the public API; callers should use dbgprt, dbgerr, dbgwrn, dbginf, or higher-level test/trace macros.
+trigger: User requested changing dbgmsg to dbg_msg because it should only be used internally.
+status: active
+tags: [dbg_msg, dbgmsg, api, macros]
+created: 2026-04-25
