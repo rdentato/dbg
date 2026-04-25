@@ -21,17 +21,16 @@ with a disposition, the disposition wins.
 
 ## Key Files & Directories
 
-| Path | Purpose | Access |
+| Path | Purpose | Access | Commit to git |
 |---|---|---|
-| `AGENTS.md` | This file | read |
-| `PLAN.md` | Complex or multi-session objectives, milestones, risks, blockers, and step statuses | read/write |
-| `NOTES.md` | Temporary session context, open questions, blockers, and scratchpad | read/write |
-| `CHANGES.md` | Per-commit change summary, created only when committing; may be absent and overwritten by the next commit | write/replace |
-| `knowledge/` | Durable project memory: numbered YAML entries | read/write |
-| `evaluations/` | Scenario analyses | write-only |
-| `ARCHIVE.md` | Historical notes | never read |
+| `AGENTS.md` | This file | read | yes |
+| `PLAN.md` | Complex or multi-session objectives, milestones, risks, blockers, and step statuses | read/write | yes |
+| `NOTES.md` | Temporary session context, open questions, blockers, and scratchpad | read/write | yes |
+| `CHANGES.md` | Per-commit change summary, created only when committing; may be absent and overwritten by the next commit | write/replace | no |
+| `knowledge/` | Durable project memory: numbered YAML entries | read/write | yes |
+| `evaluations/` | Scenario analyses | write-only | yes |
 
-`ARCHIVE.md` and `evaluations/*` are version-controlled but must
+File in the `evaluations/` directory are version-controlled but must
 never inform current reasoning. They exist only for human review.
 
 Subprojects may carry a local `PLAN.md`. Prefer the local plan
