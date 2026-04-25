@@ -8,8 +8,8 @@
 //  # DEBUG AND TESTING MACROS
 
 #ifndef DBG_VERSION
-#define DBG_VERSION     0x0201000C
-#define DBG_VERSION_STR "dbg 2.1.0-rc"
+#define DBG_VERSION     0x0201000
+#define DBG_VERSION_STR "dbg 2.1.0"
 
 //  ## Usage
 //  To enable the debugging functions, DEBUG must be defined before 
@@ -155,12 +155,14 @@ static volatile int dbg_zero = 0;
 //                                 dbgtst blocks cannot be nested.
 //                                 Statistics can be collected separately by external log tools.
 //
-//   dbgchk(test)                  Perform the test and set errno (0: ok, 1: ko).
-//   dbgchk(test, char *, ...)     As above, and if test fails prints a message
-//                                 on stderr (works as printf(...)).
+//   dbgchk(test, char *, ...)     Perform the test and set errno (0: ok, 1: ko).
+//                                 The second argument is mandatory: pass "" when
+//                                 no failure message is needed.
+//                                 If the message is not empty and the test fails,
+//                                 it is printed on stderr (works as printf(...)).
 //                                 If DEBUG is undefined or lower than DBGLVL_TEST, do nothing.
 // 
-//   dbgmst(test, ...)             As dbgchk() but if test fails exit the program with abort().
+//   dbgmst(test, char *, ...)     As dbgchk() but if test fails exit the program with abort().
 // 
 //   dbgblk {...}                  Execute the block only if DEBUG is defined as DBGLVEL_TEST.
 //
@@ -175,13 +177,14 @@ static char *dbg_nested_test = "";
                dbg_nested_test && !dbg_msg("TST[: " __VA_ARGS__); \
                fputs("TST]:\n",stderr), dbg_nested_test = 0)
 
-#define dbg_fst(x,...) x
 #undef  dbgchk
+
+#define dbg_fst(x,...) x
 #define dbgchk(e,...) \
   do { \
     int dbg_err=!(e); \
     fprintf(stderr,"%s: (%s) \x0F%s:%d\n",(dbg_err?"FAIL":"PASS"),#e,__FILE__,__LINE__); \
-    char *dbg_errmsg = "" dbg_fst(__VA_ARGS__);\
+    char *dbg_errmsg = "" dbg_fst(__VA_ARGS__,0);\
     if (dbg_err && (dbg_errmsg[0] != '\0')) { fprintf(stderr,"    ` " __VA_ARGS__); fputc('\n',stderr); } \
     errno = dbg_err; \
   } while(0)
@@ -293,7 +296,7 @@ typedef struct {
 // We use this as a stable log label and never convert it back to a pointer.
 #define dbg_p(x)  ((uintptr_t)(x))
 
-static inline void *dbg_malloc(size_t size, char *file, int line)
+static inline void *dbg_malloc(size_t size, const char *file, int line)
 {
   dbg_write("MTRK: malloc(%zd) 0 %zd ",size,size);
   void *ptr = malloc(size);
@@ -301,13 +304,13 @@ static inline void *dbg_malloc(size_t size, char *file, int line)
   return ptr;
 }
 
-static inline void dbg_free(void *ptr, char *file, int line)
+static inline void dbg_free(void *ptr, const char *file, int line)
 {
   dbg_writeln("MTRK: free(%zX) %zX 0 0",dbg_p(ptr),dbg_p(ptr));
   free(ptr);
 }
 
-static inline void *dbg_calloc(size_t count, size_t size, char *file, int32_t line)
+static inline void *dbg_calloc(size_t count, size_t size, const char *file, int32_t line)
 {
   dbg_write("MTRK: calloc(%zd,%zd) 0 %zd ",count,size,count*size);
   void *ptr = calloc(count,size);
@@ -315,7 +318,7 @@ static inline void *dbg_calloc(size_t count, size_t size, char *file, int32_t li
   return ptr;
 }
 
-static inline void *dbg_realloc(void *ptr, size_t size, char *file, int32_t line)
+static inline void *dbg_realloc(void *ptr, size_t size, const char *file, int32_t line)
 {
   dbg_write("MTRK: realloc(%zX,%zd) %zX %zd ",dbg_p(ptr),size,dbg_p(ptr),size);
   ptr = realloc(ptr,size);
@@ -327,7 +330,7 @@ static inline void *dbg_realloc(void *ptr, size_t size, char *file, int32_t line
 char *strdup(const char *s);
 char *strndup(const char *s, size_t size);
 
-static inline char *dbg_strdup(const char *s, char *file, int line)
+static inline char *dbg_strdup(const char *s, const char *file, int line)
 {
   dbg_write("MTRK: strdup(%zX) 0 ",dbg_p(s));
   char *ptr = (char *)strdup(s);
@@ -336,7 +339,7 @@ static inline char *dbg_strdup(const char *s, char *file, int line)
   return ptr;
 }
 
-static inline char *dbg_strndup(const char *s, size_t size, char *file, int line)
+static inline char *dbg_strndup(const char *s, size_t size, const char *file, int line)
 {
   dbg_write("MTRK: strndup(%zX,%zd) 0 ",dbg_p(s),size);
   char *ptr = (char *)strndup(s, size);
@@ -350,45 +353,45 @@ static inline char *dbg_strndup(const char *s, size_t size, char *file, int line
 
 // Check boundaries for the most common functions
 
-static inline char *dbg_strcpy(char *dest, char *src,char *file, int line)
+static inline char *dbg_strcpy(char *dest, const char *src, const char *file, int line)
 {
   size_t size = src? strlen(src)+1 : 0;
   dbg_writeln("MCHK: strcpy(%zX,%zX) %zX %zX",dbg_p(dest),dbg_p(src),dbg_p(dest),dbg_p(dest+size));
   return strcpy(dest,src);
 }
 
-static inline char *dbg_strncpy(char *dest, char *src, size_t size, char *file, int line)
+static inline char *dbg_strncpy(char *dest, const char *src, size_t size, const char *file, int line)
 {
   dbg_writeln("MCHK: strncpy(%zX,%zX,%zd) %zX %zX",dbg_p(dest),dbg_p(src),size,dbg_p(dest),dbg_p(dest+size));
   return strncpy(dest,src,size);
 }
 
-static inline char *dbg_strcat(char *dest, char *src,char *file, int line)
+static inline char *dbg_strcat(char *dest, const char *src, const char *file, int line)
 {
   size_t size = (dest ? strlen(dest) : 0) + (src? strlen(src)+1 : 0);
   dbg_writeln("MCHK: strcat(%zX,%zX) %zX %zX",dbg_p(dest),dbg_p(src),dbg_p(dest),dbg_p(dest+size));
   return strcat(dest,src);
 }
 
-static inline char *dbg_strncat(char *dest, char *src,size_t size, char *file, int line)
+static inline char *dbg_strncat(char *dest, const char *src, size_t size, const char *file, int line)
 {
   dbg_writeln("MCHK: strncat(%zX,%zX,%zd) %zX %zX",dbg_p(dest),dbg_p(src),size,dbg_p(dest),dbg_p(dest+((dest ? strlen(dest) : 0) + size)));
   return strncat(dest,src,size);
 }
 
-static inline void *dbg_memcpy(void *dest, void *src, size_t size, char *file, int line)
+static inline void *dbg_memcpy(void *dest, const void *src, size_t size, const char *file, int line)
 {
   dbg_writeln("MCHK: memcpy(%zX,%zX,%zd) %zX %zX",dbg_p(dest),dbg_p(src),size,dbg_p(dest),dbg_p((char *)dest+size));
   return memcpy(dest,src,size);
 }
 
-static inline void *dbg_memmove(void *dest, void *src, size_t size, char *file, int line)
+static inline void *dbg_memmove(void *dest, const void *src, size_t size, const char *file, int line)
 {
   dbg_writeln("MCHK: memmove(%zX,%zX,%zd) %zX %zX",dbg_p(dest),dbg_p(src),size,dbg_p(dest),dbg_p((char *)dest+size));
   return memmove(dest,src,size);
 }
 
-static inline void *dbg_memset(void *dest, int c, size_t size, char *file, int line)
+static inline void *dbg_memset(void *dest, int c, size_t size, const char *file, int line)
 {
   dbg_writeln("MCHK: memset(%zX,%zd) %zX %zX",dbg_p(dest),size,dbg_p(dest),dbg_p((char *)dest+size));
   return memset(dest,c,size);

@@ -159,7 +159,7 @@ Use `dbgtst` to mark a named test block.
 dbgtst("vector push/pop") {
   vec_t v = vec_new();
   vec_push(&v, 42);
-  dbgchk(vec_pop(&v) == 42);
+  dbgchk(vec_pop(&v) == 42, "");
 }
 ```
 
@@ -171,21 +171,19 @@ At test level, the block emits `TST[: ...` before the body and `TST]:` after the
 
 When test-level debugging is disabled, the test markers and checks are compiled out, but any ordinary C statements inside the braces may still execute. Keep test-only code in test-only source files, or put side-effecting debug-only statements inside `dbgblk` when they must not run outside test builds.
 
-### `dbgchk(expr)`
+### `dbgchk(expr, message, ...)`
 
-Use `dbgchk` for lightweight checks. The one-argument form prints a `PASS` or `FAIL` line with the expression and source location.
+Use `dbgchk` for lightweight checks. The message argument is mandatory: pass an empty string when you do not want an extra failure message.
 
 ```c
-dbgchk(ptr != NULL);
-dbgchk(count == expected);
-dbgchk(buffer[0] == '\0');
+dbgchk(ptr != NULL, "");
+dbgchk(count == expected, "");
+dbgchk(buffer[0] == '\0', "");
 ```
 
 `dbgchk` sets `errno` to `0` when the expression passes and to `1` when it fails. Treat this as immediate check state only; ordinary program code may overwrite `errno` later.
 
-### `dbgchk(expr, message, ...)`
-
-Use the formatted-message form when a failure needs context.
+Use a formatted message when a failure needs context.
 
 ```c
 dbgchk(user_id > 0, "invalid user id: %d", user_id);
@@ -196,7 +194,7 @@ The formatted message is printed only when the expression fails. Passing checks 
 
 Prefer short failure messages that state the useful runtime values. The expression itself is already printed by `dbgchk`.
 
-### `dbgmst(expr, ...)`
+### `dbgmst(expr, message, ...)`
 
 Use `dbgmst` for must-pass preconditions. It behaves like `dbgchk`, then aborts if the check failed.
 
@@ -205,10 +203,10 @@ FILE *fp = fopen(path, "rb");
 dbgmst(fp != NULL, "required file is missing: %s", path);
 ```
 
-The message is optional:
+When no extra failure message is needed, pass an empty string:
 
 ```c
-dbgmst(config != NULL);
+dbgmst(config != NULL, "");
 ```
 
 Use `dbgmst` sparingly. It is best for prerequisites that make the rest of the test invalid or unsafe.
@@ -260,7 +258,7 @@ Poor uses:
 #define DBG_CACHE DBG_OFF
 
 DBG_PARSE(dbginf("token: %s", token));
-DBG_PARSE(dbgchk(token != NULL));
+DBG_PARSE(dbgchk(token != NULL, ""));
 
 DBG_CACHE(dbginf("cache hit: %s", key));
 ```

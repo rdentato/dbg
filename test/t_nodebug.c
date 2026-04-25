@@ -12,12 +12,12 @@ int main(void)
   dbginf("nodebug dbginf %d", ++side);
   dbgwrn("nodebug dbgwrn %d", ++side);
   dbgerr("nodebug dbgerr %d", ++side);
-  dbgchk(++side);
+  dbgchk(++side, "");
   dbgmst(++side, "nodebug dbgmst");
 
   dbgtst("nodebug dbgtst block still runs") {
     side += 1;
-    dbgchk(++side);
+    dbgchk(++side, "");
   }
 
   dbgvrb("nodebug dbgvrb block still runs") {

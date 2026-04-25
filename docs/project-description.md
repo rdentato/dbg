@@ -125,9 +125,8 @@ Testing macros are enabled when `DEBUG >= DBGLVL_TEST`.
 | Macro | Purpose |
 |---|---|
 | `dbgtst(...) { ... }` | Start a named test block. It emits test start/end markers and cannot be nested. |
-| `dbgchk(expr)` | Evaluate an expression, emit `PASS` or `FAIL`, and set `errno` to `0` or `1`. |
-| `dbgchk(expr, message, ...)` | Like `dbgchk(expr)`, but prints a formatted message when the expression fails. |
-| `dbgmst(expr, ...)` | Like `dbgchk`, but aborts the program if the check fails. The failure message is optional. |
+| `dbgchk(expr, message, ...)` | Evaluate an expression, emit `PASS` or `FAIL`, and set `errno` to `0` or `1`. The message argument is mandatory; pass `""` when no extra failure message is needed. |
+| `dbgmst(expr, message, ...)` | Like `dbgchk`, but aborts the program if the check fails. The message argument is mandatory; pass `""` when no extra failure message is needed. |
 | `dbgblk { ... }` | Execute a block only when test-level debugging is enabled. |
 
 ### Profiling
@@ -230,9 +229,9 @@ Use the library in another C file:
 #define DEBUG DBGLVL_TEST
 #include "dbg.h"
 
-int main(void) {
-  dbgtst("basic arithmetic") {
-    dbgchk(1 + 1 == 2);
+  int main(void) {
+    dbgtst("basic arithmetic") {
+    dbgchk(1 + 1 == 2, "");
     dbgchk(2 + 2 == 5, "unexpected arithmetic result");
   }
 }

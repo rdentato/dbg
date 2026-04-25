@@ -47,7 +47,7 @@ int main(int argc, char *argv[])
 
   x=3;
   dbgtst("(1>x) with x=%d (no message on fail)",x) {
-     dbgchk(1>x);
+     dbgchk(1>x,"");
   }
 
   _dbgblk {
@@ -76,9 +76,9 @@ int main(int argc, char *argv[])
   
 // WILL NOT COMPILE
 //  dbgtst("HELLO") {
-//    dbgchk(1);
+//    dbgchk(1, "");
 //    dbgtst("Hola") {
-//      dbgchk(2);
+//      dbgchk(2, "");
 //    }
 //  }
 }

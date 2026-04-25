@@ -12,7 +12,7 @@ int main(void)
   dbgerr("warn-level error diagnostic");
   dbgwrn("warn-level warning diagnostic");
   dbginf("warn-level info should be disabled %d", ++side);
-  dbgchk(++side);
+  dbgchk(++side, "");
 
   dbgvrb("warn-level verbose block") {
     side += 1;
@@ -21,7 +21,7 @@ int main(void)
 
   dbgtst("test marker disabled below DBGLVL_TEST") {
     side += 10;
-    dbgchk(++side);
+    dbgchk(++side, "");
   }
 
   dbgclk("clock marker disabled below DBGLVL_TEST") {

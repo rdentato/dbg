@@ -12,7 +12,7 @@ _EXE=
 STATIC=
 endif
 
-CFLAGS=-O2 -Wall -DDEBUG=DBGLVL_TEST -I $(SRC) -I. $(STATIC)
+CFLAGS=-O2 -Wall -DDEBUG=DBGLVL_TEST -I $(SRC) -I. $(STATIC)  -pedantic -std=c99
 LIBS=
 
 TESTS_SRC_C=$(wildcard t_*.c)

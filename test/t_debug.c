@@ -20,12 +20,12 @@ int main(void)
   }
 
   dbgtst("enabled diagnostics and groups") {
-    dbgchk(1);
+    dbgchk(1, "");
     dbgchk(side == 0, "disabled calls should not evaluate arguments");
     dbgmst(1, "dbgmst passing scenario");
 
-    DBG_ENABLED(dbgchk(1));
-    DBG_DISABLED(dbgchk(++side));
+    DBG_ENABLED(dbgchk(1, ""));
+    DBG_DISABLED(dbgchk(++side, ""));
 
     dbgblk {
       block++;
@@ -38,7 +38,7 @@ int main(void)
     _dbginf("disabled dbginf %d", ++side);
     _dbgwrn("disabled dbgwrn %d", ++side);
     _dbgerr("disabled dbgerr %d", ++side);
-    _dbgchk(++side);
+    _dbgchk(++side, "");
     _dbgmst(++side, "disabled dbgmst");
 
     dbgchk(side == 0, "side=%d", side);
