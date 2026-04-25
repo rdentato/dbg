@@ -19,14 +19,19 @@ TESTS_SRC_C=$(wildcard t_*.c)
 TESTS_C=$(TESTS_SRC_C:.c=)
 
 TESTS_SRC=$(TST_SRC_C)
-TESTS=$(TESTS_C)
+TESTS=$(TESTS_C:%=%$(_EXE))
 
 # targets
 all: $(TESTS)
 
+%$(_EXE): %.c
+	$(CC) $(CFLAGS) -o $@ $< $(LIBS)
 
 runtest: all
-	@./tstrun
+	@rm -f test.log
+	@set -e; for test in $(TESTS); do \
+		./$$test 2>>test.log; \
+	done
 
 .PRECIOUS: %.o
 
