@@ -81,26 +81,16 @@ cc -DNDEBUG -Isrc -o app app.c
 
 | Level | Value | Enabled Macros |
 |---|---:|---|
-| `DBGLVL_ERROR` | `0` | `dbgprt`, `dbgerr`, `dbgvrb` |
+| `DBGLVL_ERROR` | `0` | `dbgerr`, `dbgvrb` |
 | `DBGLVL_WARN` | `1` | Error-level macros plus `dbgwrn` |
 | `DBGLVL_INFO` | `2` | Warning-level macros plus `dbginf` |
-| `DBGLVL_TEST` | `3` | Test, trace, block, and clock macros |
+| `DBGLVL_TEST` | `3` | Test, block, and clock macros |
 
-When `DEBUG` is not defined, the public macros still exist. Message and check macros discard their arguments. Block-style macros need more care: marker macros such as `dbgtrk`, `dbgclk`, `dbgvrb`, and `dbgtst` may leave the enclosed C block in place, while `dbgblk` is specifically for code that should not run unless test-level debugging is enabled.
+When `DEBUG` is not defined, the public macros still exist. Message and check macros discard their arguments. Block-style macros need more care: marker macros such as `dbgclk`, `dbgvrb`, and `dbgtst` may leave the enclosed C block in place, while `dbgblk` is specifically for code that should not run unless test-level debugging is enabled.
 
 `DEBUG_ALLOC` is independent from the level ladder. It enables allocation and memory-operation wrappers. If `DEBUG_ALLOC` is defined while `DEBUG` is not, `dbg.h` defines `DEBUG` as `DBGLVL_ERROR` internally so the allocation wrappers can use the shared diagnostic machinery.
 
 ## Message Macros
-
-### `dbgprt(...)`
-
-Use `dbgprt` when you want raw `fprintf(stderr, ...)` behavior and no source location suffix.
-
-```c
-dbgprt("value=%d\n", value);
-```
-
-It is available at `DBGLVL_ERROR` and above.
 
 ### `dbgerr(...)`
 
@@ -132,9 +122,9 @@ Use `dbginf` for normal progress or state diagnostics. It appears only at `DBGLV
 dbginf("loaded %zu records", record_count);
 ```
 
-### `dbg_msg(...)`
+### `dbg_msg(...)` And `dbg_prt(...)`
 
-`dbg_msg` is the internal file/line message primitive used by the public macros. Do not call it from application code. Prefer `dbgerr`, `dbgwrn`, `dbginf`, `dbgprt`, or a higher-level block macro.
+`dbg_msg` and `dbg_prt` are internal message primitives used by the public macros. Do not call them from application code. Prefer `dbgerr`, `dbgwrn`, `dbginf`, or a higher-level block macro.
 
 ## Marking Program Output With `dbgvrb`
 
@@ -153,7 +143,7 @@ Use `dbgvrb` when:
 
 - The program under test legitimately writes to `stderr`.
 - You are testing an error path that prints diagnostics.
-- You want future `dbgstat` reporting to preserve and label that output rather than treat it as a `dbg` diagnostic.
+- You want external log formatting/reporting to preserve and label that output rather than treat it as a `dbg` diagnostic.
 
 Do not use `dbgvrb` as a replacement for `dbginf` or `dbgwrn`. It is an output-classification block, not a diagnostic severity level.
 
@@ -175,7 +165,9 @@ dbgtst("vector push/pop") {
 
 At test level, the block emits `TST[: ...` before the body and `TST]:` after the body. Future reporting tools can use these markers to group checks.
 
-`dbgtst` does not generate a `main` function, count totals, or return a test result by itself. The current design keeps `dbg.h` lightweight; richer reporting belongs in a future `dbgstat` tool.
+`dbgtst` does not generate a `main` function, count totals, or return a test result by itself. The current design keeps `dbg.h` lightweight; richer reporting belongs in external tooling.
+
+`dbgtst` blocks cannot be nested. Start each test case at top level instead of placing one `dbgtst` inside another.
 
 When test-level debugging is disabled, the test markers and checks are compiled out, but any ordinary C statements inside the braces may still execute. Keep test-only code in test-only source files, or put side-effecting debug-only statements inside `dbgblk` when they must not run outside test builds.
 
@@ -231,45 +223,7 @@ dbgblk {
 }
 ```
 
-This is useful when a block is too large or too imperative to fit naturally inside a single message macro. Unlike trace, clock, verbose, and test marker blocks, `dbgblk` is the block form to use when the enclosed code itself must disappear from non-test builds.
-
-## Trace Tracking With `dbgtrk`
-
-Use `dbgtrk(...) { ... }` to mark a region whose emitted log should later be checked for expected or forbidden patterns.
-
-```c
-dbgtrk("=INGESTION SUCCESSFUL", "!INGESTION FAILED", "!INGESTION HALTED") {
-  ingest(path);
-}
-```
-
-`dbgtrk` does not evaluate those patterns at runtime. At test level, it emits a `TRK[: ...` marker containing the stringized pattern list, runs the block, then emits `TRK]:`. A future `dbgstat` tool is expected to process the log and decide whether the patterns were satisfied.
-
-When tracing is disabled, the markers are omitted but the enclosed code still runs. This is intentional: `dbgtrk` marks real behavior for observation rather than turning behavior on or off.
-
-Trace-based tests reduce coupling between tests and internal implementation details. Instead of forcing a function to return or expose temporary state only for testing, you can assert on meaningful log events.
-
-Example:
-
-```c
-int ingest(const char *path) {
-  if (!path) {
-    dbginf("INGESTION FAILED");
-    return -1;
-  }
-
-  dbginf("INGESTION SUCCESSFUL");
-  return 0;
-}
-
-void test_ingest(void) {
-  dbgtrk("=INGESTION SUCCESSFUL", "!INGESTION FAILED") {
-    ingest("input.dat");
-  }
-}
-```
-
-The exact pattern language is for the reporting tool to define. From the header and examples, patterns commonly use a leading `=` for expected matches and `!` for forbidden matches.
+This is useful when a block is too large or too imperative to fit naturally inside a single message macro. Unlike clock, verbose, and test marker blocks, `dbgblk` is the block form to use when the enclosed code itself must disappear from non-test builds.
 
 ## Timing With `dbgclk`
 
@@ -326,14 +280,10 @@ Most public macros have underscore-prefixed no-op counterparts:
 ```c
 _dbginf("temporarily quiet");
 _dbgchk(expensive_check(), "skip this check for now");
-_dbgtrk("=event") {
-  run_code_without_track_markers();
-}
 ```
 
 Available disabled forms:
 
-- `_dbgprt`
 - `_dbgtst`
 - `_dbginf`
 - `_dbgvrb`
@@ -341,7 +291,6 @@ Available disabled forms:
 - `_dbgerr`
 - `_dbgchk`
 - `_dbgmst`
-- `_dbgtrk`
 - `_dbgptr`
 - `_dbgclk`
 - `_dbgblk`
@@ -370,6 +319,7 @@ With `DEBUG_ALLOC`, calls to these functions are redefined through `dbg` wrapper
 - `strncat`
 - `memcpy`
 - `memmove`
+- `memset`
 
 Allocation wrappers emit `MTRK` lines. Memory/string operation wrappers emit `MCHK` lines.
 
@@ -422,7 +372,7 @@ int parse_record(const char *line) {
 
 In a build without `DEBUG`, the message and check macros compile without emitting diagnostics. This keeps instrumentation close to the code it explains.
 
-Be deliberate with block macros in production code. If a block contains normal program behavior, `dbgtrk`, `dbgclk`, or `dbgvrb` are appropriate because the behavior should still run when markers are disabled. If a block contains debug-only behavior, use `dbgblk` or an explicit preprocessor guard.
+Be deliberate with block macros in production code. If a block contains normal program behavior, `dbgclk` or `dbgvrb` are appropriate because the behavior should still run when markers are disabled. If a block contains debug-only behavior, use `dbgblk` or an explicit preprocessor guard.
 
 ## Getting The Most From dbg
 
@@ -431,21 +381,13 @@ Use the lowest useful debug level:
 - Use `DBGLVL_ERROR` for serious diagnostics that should be visible in most debug builds.
 - Use `DBGLVL_WARN` for suspicious but recoverable states.
 - Use `DBGLVL_INFO` for ordinary progress logs.
-- Use `DBGLVL_TEST` for tests, traces, and timing.
+- Use `DBGLVL_TEST` for tests and timing.
 
 Write checks that explain intent:
 
 ```c
 dbgchk(header.magic == EXPECTED_MAGIC,
        "magic mismatch: got 0x%08X", header.magic);
-```
-
-Prefer trace markers for behavioral tests:
-
-```c
-dbgtrk("=retry scheduled", "!fatal error") {
-  run_retry_path();
-}
 ```
 
 Use `dbgvrb` to protect real program output in logs:
@@ -465,7 +407,7 @@ DBG_IO(dbginf("open %s", path));
 DBG_IO(dbgchk(fd >= 0, "open failed for %s", path));
 ```
 
-Do not depend on `errno` as a long-lived test result. `dbgchk` writes it for immediate convenience only. For rich reports and accumulated results, use the future `dbgstat` log-processing path rather than adding counters to application code.
+Do not depend on `errno` as a long-lived test result. `dbgchk` writes it for immediate convenience only. For rich reports and accumulated results, use external log processing rather than adding counters to application code.
 
 ## Complete Example
 
@@ -505,10 +447,8 @@ int main(void) {
   }
 
   dbgtst("parse invalid number") {
-    dbgtrk("=trailing characters", "!invalid parse arguments") {
-      int value = 0;
-      dbgchk(parse_number("42x", &value) != 0);
-    }
+    int value = 0;
+    dbgchk(parse_number("42x", &value) != 0);
   }
 
   dbgclk("program stderr demonstration") {
@@ -545,8 +485,7 @@ In that release build, `dbg` markers and checks are suppressed. Ordinary program
 
 - `dbg.h` does not accumulate pass/fail totals.
 - `dbg.h` does not generate a `main` function.
-- Trace pattern evaluation is not performed at runtime.
-- Rich reports are expected to come from a future `dbgstat` tool.
+- Rich reports are expected to come from external tooling.
 - Allocation tracing uses macro redefinitions, so it should be enabled intentionally.
 
 These limitations are deliberate. `dbg` is meant to stay small enough to include directly in C projects while leaving report generation and log analysis to external tooling.

@@ -46,7 +46,7 @@
 #define DBG_OFF(...)
 
 #define _dbg_msg DBG_OFF
-#define _dbgprt DBG_OFF
+#define _dbg_prt DBG_OFF
 #define _dbgtst DBG_OFF
 #define _dbginf DBG_OFF
 #define _dbgvrb DBG_OFF
@@ -54,7 +54,6 @@
 #define _dbgerr DBG_OFF
 #define _dbgchk DBG_OFF
 #define _dbgmst DBG_OFF
-#define _dbgtrk DBG_OFF
 #define _dbgptr DBG_OFF
 #define _dbgclk DBG_OFF
 #define _dbgblk while(0)
@@ -64,16 +63,14 @@
 // to ensure the code still compiles, but they should do nothing.
 
 #define DBG_ON  DBG_OFF
-#define dbgprt _dbgprt
+#define dbg_prt _dbg_prt
 #define dbgtst _dbgtst
 #define dbginf _dbginf
 #define dbgvrb _dbgvrb
-#define dbgtrk _dbgtrk
 #define dbgwrn _dbgwrn
 #define dbgerr _dbgerr
 #define dbgchk _dbgchk
 #define dbgmst _dbgmst
-#define dbgtrk _dbgtrk
 #define dbgclk _dbgclk
 #define dbgblk _dbgblk
 #define dbgptr _dbgptr
@@ -86,6 +83,7 @@
 #include <stdio.h>
 #include <time.h>
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 
 // This variable will always be 0. It's used to suppress warnings
@@ -100,7 +98,7 @@ static volatile int dbg_zero = 0;
 //
 //                     level         enabled functions
 //                 ------------  --------------------------
-//                 DBGLVL_ERROR  dbgerr() dbgprt() dbgvrb()
+//                 DBGLVL_ERROR  dbgerr() dbgvrb()
 //                 DBGLVL_WARN   as above plus dbgwrn()
 //                 DBGLVL_INFO   as above plus dbginf()
 //                 DBGLVL_TEST   dbg functions except dgptr()
@@ -116,19 +114,19 @@ static volatile int dbg_zero = 0;
 
 // ## Printing messages
 //
-//   dbgprt(char *, ...)      Prints a message on stderr (works as printf(...)).
+//   dbg_prt(char *, ...)     Internal message primitive for raw stderr output.
 //   dbg_msg(char *, ...)     Internal message primitive that adds filename and line.
 //   dbgvrb(char *, ...) {...} Marks enclosed stderr output as program output.
 //   dbginf(char *, ...)      Prints an "INFO:" message depending on the DEBUG level.
 //   dbgwrn(char *, ...)      Prints a  "WARN:" message depending on the DEBUG level.
 //   dbgerr(char *, ...)      Prints a  "FAIL:" message.
 
-#undef  dbgprt
-#define dbgprt(...)  (fprintf(stderr,__VA_ARGS__), dbg_zero)
+#undef  dbg_prt
+#define dbg_prt(...)  (fprintf(stderr,__VA_ARGS__), dbg_zero)
 
 #undef  dbg_msg
 #define dbg_msg(...)  (fprintf(stderr,__VA_ARGS__),     \
-                      fprintf(stderr," \xF%s:%d\n",__FILE__,__LINE__), \
+                      fprintf(stderr," \x0F%s:%d\n",__FILE__,__LINE__), \
                       dbg_zero)
 #undef  dbgerr
 #define dbgerr(...)   dbg_msg("EROR: " __VA_ARGS__)
@@ -138,8 +136,8 @@ static volatile int dbg_zero = 0;
                         dbg_ && !dbg_msg("VRB[: " __VA_ARGS__); \
                         dbg_ = (fputs("VRB]:\n",stderr) , 0))
 
-// Use dbgvrb() around code that intentionally writes to stderr so dbgstat
-// can distinguish program output from dbg-generated diagnostics.
+// Use dbgvrb() around code that intentionally writes to stderr so later
+// log processing can distinguish program output from dbg-generated diagnostics.
 
 #if DEBUG >= DBGLVL_WARN
 #undef  dbgwrn
@@ -154,7 +152,8 @@ static volatile int dbg_zero = 0;
 // ## Testing 
 //   dbgtst(char *, ...){ ...}     Starts a test case.
 //                                 If DEBUG is undefined or lower than DBGLVL_TEST, do nothing.
-//                                 Stastics will be collected separately for each test case by dbgstat
+//                                 dbgtst blocks cannot be nested.
+//                                 Statistics can be collected separately by external log tools.
 //
 //   dbgchk(test)                  Perform the test and set errno (0: ok, 1: ko).
 //   dbgchk(test, char *, ...)     As above, and if test fails prints a message
@@ -169,15 +168,17 @@ static volatile int dbg_zero = 0;
 #if DEBUG >= DBGLVL_TEST
 
 #undef  dbgtst
-#define dbgtst(...)   for (int dbg_ = 1; \
-                        dbg_ && !dbg_msg("TST[: " __VA_ARGS__); \
-                        dbg_ = (fputs("TST]:\n",stderr) , 0))
+static int dbg_in_test = 0;
+#define dbgtst(...)   for (int dbg_test = (!dbg_in_test && (dbg_in_test = 1) && !dbg_msg("TST[: " __VA_ARGS__)); \
+                        dbg_test; \
+                        dbg_test = 0, dbg_in_test = 0, fputs("TST]:\n",stderr))
+
 #define dbg_fst(x,...) x
 #undef  dbgchk
 #define dbgchk(e,...) \
   do { \
     int dbg_err=!(e); \
-    fprintf(stderr,"%s: (%s) \xF%s:%d\n",(dbg_err?"FAIL":"PASS"),#e,__FILE__,__LINE__); \
+    fprintf(stderr,"%s: (%s) \x0F%s:%d\n",(dbg_err?"FAIL":"PASS"),#e,__FILE__,__LINE__); \
     char *dbg_errmsg = "" dbg_fst(__VA_ARGS__);\
     if (dbg_err && (dbg_errmsg[0] != '\0')) { fprintf(stderr,"    ` " __VA_ARGS__); fputc('\n',stderr); } \
     errno = dbg_err; \
@@ -188,54 +189,6 @@ static volatile int dbg_zero = 0;
 
 #undef  dbgblk
 #define dbgblk     if (dbg_zero) ; else
-
-// ## Tracking
-//  Tracking is inspired to a novel idea presented by Kartik Agaram in his blog
-//  quite some time ago: http://akkartik.name/post/tracing-tests
-//
-//  The basic idea is that we can flexibly set up test by monitoring the appearnce
-//  (or the lack) of certain strings in a log. This will lessen the ties between 
-//  the test and the code.
-//
-//  Consider the following test that checks that the string "INGESTION SUCCESSFUL" 
-//  appears in the log but not one of the other two strings:
-//
-//    dbgtrk("=INGESTION SUCCESSFUL","!INGESTION FAILED","!INGESTION HALTED") {
-//      ... some code and function calls
-//    }
-// 
-//  As long as the code emits those messages you are free to re-factor the code as
-//  you please whereas a test like
-//
-//    ingest_err = ingest(file);
-//    dbgchk(ingest_err == 0, "Ingestion failed with code %d",ingest_err);
-//    if (!ingest_err) ...
-//
-//  relies on the exitance of a specific integer variable. For example you could not
-//  simply write `if (!ingest(file)) ...` just because the test is there and needs
-//  ingest_err to be there as well.
-//  Sure, you still have to count on the code to emit certain strings, but this is
-//  a much weaker coupling between the code and the test than before.
-//  
-//  Note that the tracking is *not* done during the execution as this might have
-//  too great of an impact on the performance. Instead the check is done on the 
-//  log itself by the `dbgstat` tool (see `dbgstat.c`). 
-//
-//   dbgtrk(...) {...}    Specify the strings to be tracked within the scope of the
-//                           block. If DEBUG is not defined or lower than DBGLVL_TEST,
-//                           execute the block but don't mark track strings.
-//                           
-//                           Example: dbgtrk("!test","=prod") {
-//                                        ...
-//                                    }
-//
-//  _dbgtrk(...) {...}    Execute the block but don't mark string tracking.
-//
-
-#undef dbgtrk
-#define dbgtrk(...)  for (int dbg_trk=!dbg_msg("TRK[: %s", #__VA_ARGS__); \
-                            dbg_trk;                                  \
-                            dbg_trk=(fputs("TRK]:",stderr),0))
 
 // ## Profiling
 //  The `dbgclk` function is intended as a quick and dirty way to determine the elapsed time
@@ -265,7 +218,7 @@ typedef struct {
        (dbg_.elapsed < 0) && ( \
           time(&dbg_.time), dbg_.time_tm=localtime(&dbg_.time),    \
           strftime(dbg_.tstr,32,"%Y-%m-%d %H:%M:%S",dbg_.time_tm),\
-          dbgprt("CLK[: %s ",dbg_.tstr), dbg_msg(__VA_ARGS__) , \
+          dbg_prt("CLK[: %s ",dbg_.tstr), dbg_msg(__VA_ARGS__) , \
           dbg_.clk = clock() \
        ) ;   \
       \
@@ -331,11 +284,11 @@ typedef struct {
 #include <inttypes.h>
 
 #define dbg_write(...)    (fprintf(stderr,__VA_ARGS__))
-#define dbg_writeln(...)  (fprintf(stderr,__VA_ARGS__) , fprintf(stderr," \xF%s:%d\n",file,line))
+#define dbg_writeln(...)  (fprintf(stderr,__VA_ARGS__) , fprintf(stderr," \x0F%s:%d\n",file,line))
 
 // The only reason we need dbg_p is that %p representation of NULL pointers is
 // compiler dependant. This way the pointer is uniquely converted in an integer.
-// We'll need it in dbgstat as a label, we'll never convert it back to a pointer.
+// We use this as a stable log label and never convert it back to a pointer.
 #define dbg_p(x)  ((uintptr_t)(x))
 
 static inline void *dbg_malloc(size_t size, char *file, int line)
@@ -412,22 +365,22 @@ static inline char *dbg_strcat(char *dest, char *src,char *file, int line)
 {
   size_t size = (dest ? strlen(dest) : 0) + (src? strlen(src)+1 : 0);
   dbg_writeln("MCHK: strcat(%zX,%zX) %zX %zX",dbg_p(dest),dbg_p(src),dbg_p(dest),dbg_p(dest+size));
-  return strcpy(dest,src);
+  return strcat(dest,src);
 }
 
 static inline char *dbg_strncat(char *dest, char *src,size_t size, char *file, int line)
 {
   dbg_writeln("MCHK: strncat(%zX,%zX,%zd) %zX %zX",dbg_p(dest),dbg_p(src),size,dbg_p(dest),dbg_p(dest+((dest ? strlen(dest) : 0) + size)));
-  return strncpy(dest,src,size);
+  return strncat(dest,src,size);
 }
 
-static inline char *dbg_memcpy(void *dest, void *src, size_t size, char *file, int line)
+static inline void *dbg_memcpy(void *dest, void *src, size_t size, char *file, int line)
 {
   dbg_writeln("MCHK: memcpy(%zX,%zX,%zd) %zX %zX",dbg_p(dest),dbg_p(src),size,dbg_p(dest),dbg_p((char *)dest+size));
   return memcpy(dest,src,size);
 }
 
-static inline char *dbg_memmove(void *dest, void *src, size_t size, char *file, int line)
+static inline void *dbg_memmove(void *dest, void *src, size_t size, char *file, int line)
 {
   dbg_writeln("MCHK: memmove(%zX,%zX,%zd) %zX %zX",dbg_p(dest),dbg_p(src),size,dbg_p(dest),dbg_p((char *)dest+size));
   return memmove(dest,src,size);
@@ -450,6 +403,7 @@ static inline void *dbg_memset(void *dest, int c, size_t size, char *file, int l
 #define strncat(d,s,n) dbg_strncat(d,s,n,__FILE__, __LINE__)
 #define memcpy(d,s,n)  dbg_memcpy(d,s,n,__FILE__, __LINE__)
 #define memmove(d,s,n)  dbg_memmove(d,s,n,__FILE__, __LINE__)
+#define memset(d,c,n)  dbg_memset(d,c,n,__FILE__, __LINE__)
 
 #undef  dbgptr
 #define dbgptr(p) dbg_msg("MCHK: ptr %zX", dbg_p(p))

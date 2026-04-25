@@ -1,5 +1,0 @@
-statement: Do not add pass/fail accounting or reporting APIs to dbg.h for now. Test reporting should be handled later by a separate dbgstat.c tool that produces a nicer report.
-trigger: User decided not to port tst-style result accounting into dbg.h after reviewing ../tst.
-status: active
-tags: [dbgstat, reporting, tests, api]
-created: 2026-04-25

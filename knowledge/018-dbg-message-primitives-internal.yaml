@@ -1,0 +1,6 @@
+statement: dbg_msg and dbg_prt are internal-only message primitives used by dbg.h macros. External code should use public diagnostics such as dbgerr, dbgwrn, dbginf, dbgvrb, dbgtst, dbgchk, dbgmst, dbgclk, dbgblk, or dbgptr where enabled.
+trigger: User decided the raw print primitive should not be exposed and renamed it to dbg_prt.
+supersedes: 006
+status: active
+tags: [api, diagnostics, internal, dbg-prt]
+created: 2026-04-25

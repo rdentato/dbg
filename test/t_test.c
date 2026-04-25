@@ -73,4 +73,12 @@ int main(int argc, char *argv[])
       dbginf("3-----");
 
   }
+  
+// WILL NOT COMPILE
+//  dbgtst("HELLO") {
+//    dbgchk(1);
+//    dbgtst("Hola") {
+//      dbgchk(2);
+//    }
+//  }
 }

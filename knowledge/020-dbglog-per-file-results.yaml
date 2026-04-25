@@ -1,0 +1,5 @@
+statement: dbglog prints an RSLT summary at the end of each file section using failed-checks over total-checks for that file, and resets those counters when the source file changes.
+trigger: User requested per-file failed-test summaries in dbglog.
+status: active
+tags: [dbglog, output-format, per-file, results]
+created: 2026-04-25

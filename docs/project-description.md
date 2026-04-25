@@ -2,7 +2,7 @@
 
 ## Overview
 
-`dbg` is a small C debugging and testing macro library. Its primary implementation is the header file `src/dbg.h`, which provides compile-time controlled macros for diagnostic printing, lightweight assertions, scoped test blocks, trace markers, simple timing, debug grouping, and optional memory-call tracing.
+`dbg` is a small C debugging and testing macro library. Its primary implementation is the header file `src/dbg.h`, which provides compile-time controlled macros for diagnostic printing, lightweight assertions, scoped test blocks, simple timing, debug grouping, and optional memory-call tracing. The `src/` directory also contains small log-processing tools.
 
 The repository README describes the project as a "very minimal debug/testing macro" and points readers to `src/dbg.h` for full documentation. The code is distributed under the MIT License.
 
@@ -11,8 +11,7 @@ The repository README describes the project as a "very minimal debug/testing mac
 This repository appears to be a compact, early-stage or partially restored project:
 
 - The usable library surface is concentrated in `src/dbg.h`.
-- Example comments refer to a root `bld` script and `tools/dbgstat.exe`, but neither `bld` nor `tools/` is present in this checkout.
-- `dbgtrk` now accepts variadic pattern arguments and emits the stringized pattern list for later processing by `dbgstat`.
+- A minimal `src/dbglog.c` formatter is present for making raw `dbg` logs easier to read.
 
 ## Repository Layout
 
@@ -22,18 +21,19 @@ This repository appears to be a compact, early-stage or partially restored proje
 |-- LICENSE
 |-- README.md
 |-- docs/
+|   |-- manual.md
 |   `-- project-description.md
-|-- examples/
-|   `-- akkartik/
-|       |-- bar.c
-|       |-- bld.trg
-|       `-- foo.c
 |-- src/
-|   `-- dbg.h
+|   |-- dbg.h
+|   |-- dbglog.c
+|   `-- makefile
 `-- test/
     |-- makefile
-    |-- t_test.c
-    `-- t_trace.c
+    |-- t_alloc.c
+    |-- t_debug.c
+    |-- t_levels.c
+    |-- t_nodebug.c
+    `-- t_test.c
 ```
 
 ## Main Components
@@ -73,19 +73,14 @@ cc -DDEBUG=DBGLVL_TEST -Wall -O0 -Isrc -o /tmp/dbg_t_test test/t_test.c
 
 Running it intentionally emits both passing and failing checks, making it a demonstration rather than a conventional all-green unit test.
 
-### `test/t_trace.c`
+### Additional `test/t_*.c` Coverage
 
-`test/t_trace.c` demonstrates trace markers with the variadic `dbgtrk(...)` macro.
+The remaining test programs exercise focused scenarios:
 
-### `examples/akkartik/`
-
-The `examples/akkartik` directory demonstrates trace-based testing inspired by Kartik Agaram's article on tracing tests. The examples explain the idea of printing a trace during execution and asserting on trace lines afterward.
-
-Files:
-
-- `foo.c`: Demonstrates trace patterns passed as variadic `dbgtrk(...)` arguments.
-- `bar.c`: Demonstrates nested trace tracking with variadic `dbgtrk(...)` arguments.
-- `bld.trg`: Build target metadata for an external `bld` tool that is not present in this checkout.
+- `test/t_alloc.c`: `DEBUG_ALLOC`, allocation wrappers, memory/string wrappers, and `dbgptr`.
+- `test/t_debug.c`: enabled diagnostics, grouping, disabled underscore forms, `dbgblk`, `dbgmst`, and timing.
+- `test/t_levels.c`: warning-level behavior below `DBGLVL_TEST`.
+- `test/t_nodebug.c`: `NDEBUG` suppression and block macro behavior with debugging disabled.
 
 ## Debug Levels
 
@@ -93,10 +88,10 @@ Debug behavior is controlled by defining `DEBUG` before including `dbg.h`. The h
 
 | Level | Value | Enabled Behavior |
 |---|---:|---|
-| `DBGLVL_ERROR` | `0` | `dbgerr`, `dbgprt`, `dbgvrb` |
+| `DBGLVL_ERROR` | `0` | `dbgerr`, `dbgvrb` |
 | `DBGLVL_WARN` | `1` | Error-level macros plus `dbgwrn` |
 | `DBGLVL_INFO` | `2` | Warning-level macros plus `dbginf` |
-| `DBGLVL_TEST` | `3` | Test, tracking, profiling, and block macros except memory pointer tracing |
+| `DBGLVL_TEST` | `3` | Test, profiling, and block macros except memory pointer tracing |
 
 Example compile command:
 
@@ -116,13 +111,12 @@ The basic message macros write to `stderr`.
 
 | Macro | Purpose |
 |---|---|
-| `dbgprt(...)` | Print a formatted message to `stderr`. Similar to `fprintf(stderr, ...)`. |
 | `dbgvrb(...) { ... }` | Mark enclosed program `stderr` output with `VRB` delimiters so it can be distinguished from dbg-generated diagnostics. |
 | `dbgerr(...)` | Print a `FAIL:` message. |
 | `dbgwrn(...)` | Print a `WARN:` message when `DEBUG >= DBGLVL_WARN`. |
 | `dbginf(...)` | Print an `INFO:` message when `DEBUG >= DBGLVL_INFO`. |
 
-`dbg_msg(...)` is the internal primitive used by the public message macros to add source file and line information. It is not part of the public API.
+`dbg_msg(...)` and `dbg_prt(...)` are internal primitives used by the public message macros. They are not part of the public API.
 
 ### Testing
 
@@ -130,25 +124,11 @@ Testing macros are enabled when `DEBUG >= DBGLVL_TEST`.
 
 | Macro | Purpose |
 |---|---|
-| `dbgtst(...) { ... }` | Start a named test block. It emits test start/end markers. |
+| `dbgtst(...) { ... }` | Start a named test block. It emits test start/end markers and cannot be nested. |
 | `dbgchk(expr)` | Evaluate an expression, emit `PASS` or `FAIL`, and set `errno` to `0` or `1`. |
 | `dbgchk(expr, message, ...)` | Like `dbgchk(expr)`, but prints a formatted message when the expression fails. |
 | `dbgmst(expr, ...)` | Like `dbgchk`, but aborts the program if the check fails. The failure message is optional. |
 | `dbgblk { ... }` | Execute a block only when test-level debugging is enabled. |
-
-### Trace Tracking
-
-`dbgtrk(...) { ... }` emits trace-scope markers around a block. The header comments describe a workflow where the runtime log is later processed by a `dbgstat` tool to check whether expected strings are present or absent.
-
-The current implementation does not perform trace assertions during execution. It only writes markers such as `TRK[: ...` and `TRK]:` to `stderr`.
-
-Tracking patterns are passed as separate macro arguments and stringized into the trace marker. For example:
-
-```c
-dbgtrk("!test", "=prod") {
-  /* code that emits debug messages */
-}
-```
 
 ### Profiling
 
@@ -180,7 +160,6 @@ Changing the group definition to `DBG_OFF` compiles those grouped calls out with
 
 For most public macros, `dbg.h` also provides an underscore-prefixed no-op counterpart:
 
-- `_dbgprt`
 - `_dbgtst`
 - `_dbginf`
 - `_dbgvrb`
@@ -188,7 +167,6 @@ For most public macros, `dbg.h` also provides an underscore-prefixed no-op count
 - `_dbgerr`
 - `_dbgchk`
 - `_dbgmst`
-- `_dbgtrk`
 - `_dbgptr`
 - `_dbgclk`
 - `_dbgblk`
@@ -216,6 +194,7 @@ Wrapped memory/string operations:
 - `strncat`
 - `memcpy`
 - `memmove`
+- `memset`
 
 Additional macro:
 
@@ -245,12 +224,6 @@ Compile the main test sample:
 cc -DDEBUG=DBGLVL_TEST -Wall -O0 -Isrc -o /tmp/dbg_t_test test/t_test.c
 ```
 
-Compile the `foo` trace example:
-
-```sh
-cc -DDEBUG=DBGLVL_TEST -Wall -O0 -Isrc -o /tmp/dbg_example_foo examples/akkartik/foo.c
-```
-
 Use the library in another C file:
 
 ```c
@@ -276,27 +249,18 @@ cc -DDEBUG=DBGLVL_TEST -Isrc -o program program.c
 The following checks were run while preparing this document:
 
 ```sh
-cc -DDEBUG=DBGLVL_TEST -Wall -O0 -Isrc -o /tmp/dbg_t_test test/t_test.c
-/tmp/dbg_t_test
-cc -DDEBUG=DBGLVL_TEST -Wall -O0 -Isrc -o /tmp/dbg_t_trace test/t_trace.c
-cc -DDEBUG=DBGLVL_TEST -Wall -O0 -Isrc -o /tmp/dbg_example_foo examples/akkartik/foo.c
-cc -DDEBUG=DBGLVL_TEST -Wall -O0 -Isrc -o /tmp/dbg_example_bar examples/akkartik/bar.c
-cc -DDEBUG_ALLOC -Wall -O0 -Isrc -o /tmp/dbg_t_test_alloc test/t_test.c
-cc -DDEBUG=DBGLVL_TEST -DDEBUG_ALLOC -Wall -O0 -Isrc -o /tmp/dbg_example_foo_alloc examples/akkartik/foo.c
+make -f makefile clean all
+make -f makefile runtest
 ```
 
 Results:
 
-- `test/t_test.c` compiled and ran, emitting intentional pass/fail debug output.
-- `test/t_trace.c` compiled.
-- `examples/akkartik/foo.c` compiled.
-- `examples/akkartik/bar.c` compiled.
-- `DEBUG_ALLOC` compiled in allocation-only mode and combined with `DEBUG=DBGLVL_TEST`.
+- All `test/t_*.c` programs compiled and ran through `test/makefile`.
+- `test/t_test.c` still intentionally emits failing checks as demonstration data.
+- `src/dbglog` processed the generated `test.log`.
 
 ## Known Gaps And Risks
 
-- The repository references a `dbgstat` tool, but no complete implementation or `tools/` directory is present.
-- Trace assertions are described in comments, but the current header only emits trace markers. Post-processing is external and unavailable in this checkout.
 - There is no automated test runner or CI configuration in the current checkout, despite the README badge pointing to Travis CI.
 - Memory tracing mode redefines standard/POSIX allocation and memory functions, which can be useful for diagnostics but may surprise consumers if enabled globally.
 

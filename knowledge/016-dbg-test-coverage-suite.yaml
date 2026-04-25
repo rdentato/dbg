@@ -1,0 +1,5 @@
+statement: The test suite now includes focused t_*.c programs for DEBUG_ALLOC wrappers, enabled diagnostics/groups/disabled forms, warning-level behavior, NDEBUG behavior, and the original pass/fail/timing demonstration.
+trigger: User requested more dbg.h tests exercising all functions in varied scenarios.
+status: active
+tags: [tests, dbg-h, coverage, debug-alloc]
+created: 2026-04-25
