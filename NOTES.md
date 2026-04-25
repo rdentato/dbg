@@ -94,3 +94,7 @@
 - Completed: Removed small helper indirections and the tiny test-state struct, keeping the same output with simpler direct counters and file-switch handling.
 - Pending: None.
 - Notes: Rebuilt `dbglog`, regenerated the test log, compared output, and cleaned artifacts.
+- Worked on: Adding verified HTML output to `dbglog`.
+- Completed: Fixed `-H` option parsing, made HTML mode accept raw or already transformed logs, corrected transformed-line classification for colored HTML output, and verified both text and HTML paths.
+- Pending: None.
+- Notes: Verified `make -C src clean all`, `make -C test runtest`, `./dbglog -H ../test/test.log`, `./dbglog ../test/test.log > /tmp/dbglog.txt`, and `./dbglog -H /tmp/dbglog.txt`.

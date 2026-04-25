@@ -352,6 +352,58 @@ Important cautions:
 - `strdup` and `strndup` are POSIX-style functions. Portability depends on the compiler and C library.
 - Use `NDEBUG` to suppress allocation tracing in release builds.
 
+## Log Formatting With `dbglog`
+
+`dbglog` is the external log-formatting tool in `src/dbglog.c`. It reads `dbg` output and formats it either as readable plain text or as a single static HTML report.
+
+Build it with:
+
+```sh
+make -C src
+```
+
+Current options:
+
+```text
+-h  show help and usage
+-H  render HTML instead of plain text
+-v  show version
+```
+
+With no file arguments, `dbglog` reads from standard input.
+
+Plain text mode takes raw `dbg` logs and rewrites them into grouped file sections. It prints:
+
+- `FILE:` headers when the source file changes
+- line-numbered records for source-tagged diagnostics
+- indented non-source lines such as `VRB]:`, `CLK]:`, and test summaries
+- `TST]: failed / checks failed` summaries for each `dbgtst`
+- per-file `RSLT: failed_checks / total_checks failed` summaries
+
+Example:
+
+```sh
+./src/dbglog test/test.log
+./program 2>&1 | ./src/dbglog
+```
+
+HTML mode renders the same information as a single static page with one collapsible card per file, navigation links, and color-coded lines:
+
+```sh
+./src/dbglog -H test/test.log > report.html
+```
+
+In HTML mode, file cards start collapsed by default.
+
+`dbglog -H` accepts either raw `dbg` logs or already transformed `dbglog` text. It detects transformed input when the first non-empty line starts with `FILE:`. Otherwise it first applies the normal text transformation and then renders the HTML page.
+
+This means both of these forms work:
+
+```sh
+./src/dbglog -H test/test.log > raw-report.html
+./src/dbglog test/test.log | ./src/dbglog -H > text-report.html
+```
+
 ## Release Builds And Source Hygiene
 
 The intended workflow is to leave diagnostic calls in source code and use compile flags to control their output.

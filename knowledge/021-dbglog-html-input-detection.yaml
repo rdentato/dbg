@@ -1,0 +1,5 @@
+statement: dbglog supports `-H` to generate a single static interactive HTML report. In HTML mode it detects already transformed input when the first non-empty line starts with `FILE:`; otherwise it first applies the normal text transformation and then renders HTML.
+trigger: User requested HTML output for dbglog that works on both raw dbg logs and already transformed dbglog text.
+status: active
+tags: [dbglog, html, input-detection, static-report]
+created: 2026-04-25

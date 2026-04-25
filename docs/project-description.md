@@ -11,7 +11,7 @@ The repository README describes the project as a "very minimal debug/testing mac
 This repository appears to be a compact, early-stage or partially restored project:
 
 - The usable library surface is concentrated in `src/dbg.h`.
-- A minimal `src/dbglog.c` formatter is present for making raw `dbg` logs easier to read.
+- `src/dbglog.c` formats raw `dbg` logs as readable text and can also render them as a single static interactive HTML page with `-H`.
 
 ## Repository Layout
 
@@ -249,15 +249,15 @@ cc -DDEBUG=DBGLVL_TEST -Isrc -o program program.c
 The following checks were run while preparing this document:
 
 ```sh
-make -f makefile clean all
-make -f makefile runtest
+make -C src clean all
+make -C test runtest
 ```
 
 Results:
 
 - All `test/t_*.c` programs compiled and ran through `test/makefile`.
 - `test/t_test.c` still intentionally emits failing checks as demonstration data.
-- `src/dbglog` processed the generated `test.log`.
+- `src/dbglog` processed the generated `test.log` in both text mode and HTML mode, including HTML generation from already transformed input.
 
 ## Known Gaps And Risks
 
