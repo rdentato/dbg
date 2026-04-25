@@ -1,8 +1,0 @@
-- `src/dbg.h`: document and expose the latest macro behavior: optional `dbgchk` messages, internal-only `dbg_msg`, and public `dbgvrb` blocks for program stderr output.
-- `test/t_test.c`: exercise `dbgchk(expr)` without a message, replace direct `dbgmsg` use with public macros, and add a `dbgvrb` stderr-output example.
-- `docs/project-description.md`: update the project description for version 2.1.0-rc, optional `dbgchk` messages, internal `dbg_msg`, and `dbgvrb` markers.
-- `NOTES.md`: record the current API documentation and verification work.
-- `knowledge/005-dbgchk-optional-message.yaml`: preserve the decision that `dbgchk` and `dbgmst` accept optional messages.
-- `knowledge/006-dbg-msg-internal-only.yaml`: preserve the decision that `dbg_msg` is internal and `dbgmsg` is not public API.
-- `knowledge/007-dbgvrb-program-stderr-marker.yaml`: preserve the purpose of `dbgvrb` as a marker for expected program stderr output.
-- `CHANGES.md`: summarize the files and rationale for this commit.
