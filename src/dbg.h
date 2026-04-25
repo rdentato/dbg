@@ -168,10 +168,12 @@ static volatile int dbg_zero = 0;
 #if DEBUG >= DBGLVL_TEST
 
 #undef  dbgtst
-static int dbg_in_test = 0;
-#define dbgtst(...)   for (int dbg_test = (!dbg_in_test && (dbg_in_test = 1) && !dbg_msg("TST[: " __VA_ARGS__)); \
-                        dbg_test; \
-                        dbg_test = 0, dbg_in_test = 0, fputs("TST]:\n",stderr))
+static char *dbg_nested_test = "";
+#define dbgtst(...) \
+     if (dbg_nested_test[0]) ; \
+     else for (int dbg_nested_test = 1; \
+               dbg_nested_test && !dbg_msg("TST[: " __VA_ARGS__); \
+               fputs("TST]:\n",stderr), dbg_nested_test = 0)
 
 #define dbg_fst(x,...) x
 #undef  dbgchk

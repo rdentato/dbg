@@ -42,6 +42,25 @@ Before performing a destructive action or a major refactor, always summarize
 the intended changes and await an explicit `yes`, `ok`, or `go`, or a clear
 equivalent. Silence is not consent.
 
+## User-Owned Changes
+
+- Existing user-authored files and edits are user-owned. Do not modify,
+  rewrite, simplify, comment out, reformat, replace, or remove them without
+  explicit approval.
+- This applies even when a requested task seems related. A broad request such
+  as "continue", "fix it", "update the docs", or "make the tests pass" is not
+  permission to alter prior user work unless the user explicitly names the file
+  or clearly approves the change after a summary.
+- If completing a task appears to require touching an existing user-edited
+  file, stop first. Name the file, summarize the exact intended change, and ask
+  for approval.
+- Tests, examples, and documentation are not exceptions. Treat them the same
+  as source files.
+- Prefer additive changes in new files or clearly isolated code paths when
+  possible. Do not "clean up" or "align" existing user work unless asked.
+- Never overwrite prior user changes based on inference, convenience, or your
+  own judgment about what seems consistent.
+
 ## User Commands
 
 | Command | Action |
