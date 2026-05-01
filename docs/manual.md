@@ -283,6 +283,32 @@ Poor uses:
 - Measuring sleep, I/O wait, or wall-clock latency.
 - Making pass/fail decisions from tiny timing differences.
 
+## Timestamps With `dbgnow`
+
+Use `dbgnow` to record wall-clock timestamps in the log.
+
+```c
+dbgnow("processing started");
+do_work();
+dbgnow("processing finished");
+```
+
+`dbgnow` emits a `NOW=:` line with a `YYYY-MM-DD HH:MM:SS` timestamp followed by an optional message. It uses `time()` from the C library, so resolution is seconds.
+
+```text
+NOW=: 2026-05-01 13:18:12 processing started  t_now.c:23
+```
+
+`dbgnow` is not a block macro. Each call produces a single timestamp line. Use it to mark events, phases, or checkpoints in a log.
+
+Good uses:
+
+- Marking the start and end of a long-running operation.
+- Correlating debug output with external log timestamps.
+- Recording when a particular code path is reached during debugging.
+
+Do not use `dbgnow` for precision timing — it measures wall-clock time at second resolution and is not suitable for measuring short intervals. Use `dbgclk` for block-level CPU timing.
+
 ## Grouping Debug Code
 
 `DBG_ON` and `DBG_OFF` let you define project-specific switches for related debug calls.
