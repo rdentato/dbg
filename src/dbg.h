@@ -83,7 +83,6 @@
 
 #include <stdio.h>
 #include <time.h>
-#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -151,7 +150,7 @@ static volatile int dbg_zero = 0;
 //                                 dbgtst blocks cannot be nested.
 //                                 Statistics can be collected separately by external log tools.
 //
-//   dbgchk(test, char *, ...)     Perform the test and set errno (0: ok, 1: ko).
+//   dbgchk(test, char *, ...)     Perform the test.
 //                                 The second argument is mandatory: pass "" when
 //                                 no failure message is needed.
 //                                 If the message is not empty and the test fails,
@@ -174,20 +173,22 @@ static char *dbg_nested_test = "";
                dbg_nested_test && !dbg_msg("TST[: " __VA_ARGS__); \
                fputs("TST]:\n",stderr), dbg_nested_test = 0)
 
-#undef  dbgchk
 
 #define dbg_fst(x,...) x
-#define dbgchk(e,...) \
+#define dbg_chk(m,e,...) \
   do { \
     int dbg_err=!(e); \
     fprintf(stderr,"%s: (%s) \x0F%s:%d\n",(dbg_err?"FAIL":"PASS"),#e,__FILE__,__LINE__); \
     char *dbg_errmsg = "" dbg_fst(__VA_ARGS__,0);\
     if (dbg_err && (dbg_errmsg[0] != '\0')) { fprintf(stderr,"    ` " __VA_ARGS__); fputc('\n',stderr); } \
-    errno = dbg_err; \
+    if (m && dbg_err) abort(); \
   } while(0)
 
+#undef  dbgchk
+#define dbgchk(e,...) dbg_chk(0, e, __VA_ARGS__) 
+
 #undef  dbgmst
-#define dbgmst(e,...)  do { dbgchk(e,__VA_ARGS__); if (errno) abort();} while(0)
+#define dbgmst(e,...) dbg_chk(1, e, __VA_ARGS__) 
 
 // ## Tracing
 //
