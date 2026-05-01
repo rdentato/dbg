@@ -204,12 +204,13 @@ static char *dbg_nested_test = "";
 //
 // dbgtrk can't be nested.
 
+static char *dbg_nested_track = "";
 #undef  dbgtrk
 #define dbgtrk(...) \
-     if (dbg_nested_test[0]) ; \
-     else for (int dbg_nested_test = 1; \
-               dbg_nested_test && !dbg_msg("TRK[: " __VA_ARGS__); \
-               fputs("TRK]:\n",stderr), dbg_nested_test = 0)
+     if (dbg_nested_track[0]) ; \
+     else for (int dbg_nested_track = 1; \
+               dbg_nested_track && !dbg_msg("TRK[: " #__VA_ARGS__); \
+               fputs("TRK]:\n",stderr), dbg_nested_track = 0)
 
 
 #undef  dbgblk
@@ -281,6 +282,8 @@ typedef struct {
 
 #undef  DBG_ON
 #define DBG_ON(...)  __VA_ARGS__
+
+static inline int dbg_avoid_warning() { return (dbg_nested_test[0] && dbg_nested_track[0]) ;}
 
 #endif // DEBUG >= DBGLVL_TEST
 
