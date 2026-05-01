@@ -1,43 +1,49 @@
 # Objective
 
-- Complete the `dbg.h` release-hardening pass.
+- Refactor `dbg.h` for embedded compatibility: minimize C library dependencies, emit raw data, let `dbglog` handle formatting.
 
 # Status
 
-- [x] Release-hardening complete.
+- [~] Specification agreed; implementation not started.
 
 # Milestones
 
-- [x] Resolve the strict ISO C portability issue by making `dbgchk`/`dbgmst` require an explicit message argument.
-- [x] Remove public-header const-qualification warnings in `DEBUG_ALLOC` wrappers.
-- [x] Add verification that asserts the public output contract for `dbg.h`.
-- [x] Decide release versioning before shipping.
+1. [ ] Add `DBG_PUTC` macro and hex/string output primitives.
+2. [ ] Replace `dbg_msg` + `fprintf` with `dbg_emit` using single-byte codes and 16-char hex args.
+3. [ ] Rewrite block macros (`dbgtst`, `dbgtrk`, `dbgvrb`, `dbgclk`) for new format.
+4. [ ] Rewrite `dbgchk`/`dbgmst` with `P`/`F` codes and `D` detail.
+5. [ ] Rewrite `dbgnow` with `N` code and raw `time_t` as hex.
+6. [ ] Make headers conditional; remove `<time.h>` dependency.
+7. [ ] Rewrite `dbglog.c` to parse new format.
+8. [ ] Update tests.
+9. [ ] Update documentation.
 
-# Tasks
+# Format Specification
 
-- [x] Resolve the `dbgchk`/`dbgmst` portability issue by requiring an explicit message argument and updating current test call sites.
-- [x] Add strict compilation checks to validate the current macro form with existing tests.
-- [x] Change internal wrapper signatures in `src/dbg.h` from mutable string pointers to const-correct ones where appropriate.
-- [x] Re-run strict-warning compilation for `DEBUG_ALLOC` and ordinary debug builds to confirm warning cleanup.
-- [x] Add a self-checking test for representative `dbg.h` stderr output.
-- [x] Use the self-checking test approach instead of checked-in output fixtures.
-- [x] Update version identifiers and release docs once the code and checks are green.
+- Event codes: single ASCII byte (`E`, `W`, `I`, `P`, `F`, `T`/`t`, `K`/`k`, `V`/`v`, `C`/`c`, `N`, `D`)
+- Payload: format string null-terminated (not printf-expanded)
+- Numeric args: 16-char zero-padded uppercase hex
+- `%s` args: null-terminated string content
+- `double` args: union cast to uint64, emitted as 16-char hex
+- Source location: `\x0F <file>\0 <line-decimal-ascii> \n`
+- No spaces after `\0` delimiters
 
 # Risks
 
-- The `dbgchk`/`dbgmst` portability fix changes the public API by requiring an explicit message argument.
-- Output-contract tests may need careful normalization if stderr formatting differs across toolchains.
+- `dbglog` incompatible with old format; need full rewrite or dual-mode parser.
+- `DEBUG_ALLOC` excluded from this pass (too many stdlib dependencies).
+- Format specifier parsing in `dbg_emit` needs to handle full printf syntax without stdlib.
 
 # Blockers
 
-- None currently.
+- None.
 
 # Decision Log
 
-- Excluded from this release-hardening plan: improving `dbglog` handling of overlong input lines.
-- Excluded from this release-hardening plan: adding further `dbglog` verification; the current focus is `dbg.h` production readiness.
-- Decided not to add CI for this release; local makefile-driven verification is sufficient for this small near-complete solo project.
+- `DEBUG_ALLOC` excluded from embedded pass.
+- 16-char hex chosen over raw binary to avoid ABI assumptions in dbglog.
+- No commits until user gives explicit word.
 
 # Next Step
 
-- Await the next user goal.
+- Begin implementation: `DBG_PUTC` + hex primitives + `dbg_emit` function in `src/dbg.h`.
