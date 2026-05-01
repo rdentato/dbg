@@ -244,7 +244,7 @@ typedef struct {
        (dbg_.elapsed < 0) && ( \
           time(&dbg_.time), dbg_.time_tm=localtime(&dbg_.time),    \
           strftime(dbg_.tstr,32,"%Y-%m-%d %H:%M:%S",dbg_.time_tm),\
-          fprintf(stderr,"CLK[: %s ",dbg_.tstr), dbg_msg(__VA_ARGS__) , \
+          fprintf(stderr,"CLK[: %s",dbg_.tstr), dbg_msg(" " __VA_ARGS__) , \
           dbg_.clk = clock() \
        ) ;   \
       \
@@ -259,7 +259,7 @@ typedef struct {
        (dbg_.elapsed < 0) && ( \
           time(&dbg_.time), dbg_.time_tm=localtime(&dbg_.time),    \
           strftime(dbg_.tstr,32,"%Y-%m-%d %H:%M:%S",dbg_.time_tm),\
-          fprintf(stderr,"NOW=: %s ",dbg_.tstr), dbg_msg("" __VA_ARGS__) \
+          fprintf(stderr,"NOW=: %s",dbg_.tstr), dbg_msg(" " __VA_ARGS__) \
        )\
       ; \
        dbg_.elapsed=1 \
