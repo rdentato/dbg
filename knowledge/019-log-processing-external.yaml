@@ -1,5 +1,0 @@
-statement: dbg.h remains header-only and does not include built-in result accounting or rich report generation. Any future reporting or post-processing should be designed as external tooling rather than folded into the header.
-trigger: The abandoned reporting utility and its references were removed from the repository.
-status: active
-tags: [reporting, tools, header-only, logs]
-created: 2026-04-25

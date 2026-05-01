@@ -1,5 +1,0 @@
-statement: src/dbglog.c is a readable log formatter for dbg.h output. It prints FILE headers, line-numbered records, indented non-source lines, per-test TST summaries, and a final RSLT failed-tests summary.
-trigger: User requested a dbglog.c program to transform raw dbg logs into a more readable format.
-status: active
-tags: [dbglog, formatter, logs, tools]
-created: 2026-04-25

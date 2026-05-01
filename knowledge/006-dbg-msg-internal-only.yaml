@@ -1,5 +1,0 @@
-statement: dbg_msg is the internal file/line message primitive used by dbg.h macros. This entry is superseded by the broader internal-message-primitives API rule.
-trigger: User requested changing dbgmsg to dbg_msg because it should only be used internally.
-status: deprecated
-tags: [dbg_msg, dbgmsg, api, macros]
-created: 2026-04-25

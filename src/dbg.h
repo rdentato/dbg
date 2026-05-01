@@ -163,8 +163,9 @@ static volatile int dbg_zero = 0;
 
 #if DEBUG >= DBGLVL_TEST
 
-#undef  dbgtst
 static char *dbg_nested_test = "";
+
+#undef  dbgtst
 #define dbgtst(...) \
      if (dbg_nested_test[0]) ; \
      else for (int dbg_nested_test = 1; \
@@ -185,6 +186,31 @@ static char *dbg_nested_test = "";
 
 #undef  dbgmst
 #define dbgmst(e,...)  do { dbgchk(e,__VA_ARGS__); if (errno) abort();} while(0)
+
+// ## Tracing
+//
+// Kartik Agaram exposed a nice idea about using traces to write better
+// tests: https://akkartik.name/post/tracing-tests
+// dbgtrk() is a simple implementation of that idea. It allows you to
+// specify which strings you expect to be present (or to be missing) in
+// a give portion of log
+//
+// dbgtrk("=must-exist","!must-not-exist") {
+//   code_emitting_log
+// }
+//
+// The actual test will be performed by dbglog that will check the strings
+// and inject a "PASS" or "FAIL".
+//
+// dbgtrk can't be nested.
+
+#undef  dbgtrk
+#define dbgtrk(...) \
+     if (dbg_nested_test[0]) ; \
+     else for (int dbg_nested_test = 1; \
+               dbg_nested_test && !dbg_msg("TRK[: " __VA_ARGS__); \
+               fputs("TRK]:\n",stderr), dbg_nested_test = 0)
+
 
 #undef  dbgblk
 #define dbgblk     if (dbg_zero) ; else
@@ -224,27 +250,6 @@ typedef struct {
        dbg_.elapsed=(long int)(clock()-dbg_.clk),               \
        fprintf(stderr,"CLK]: +%ld/%ld sec.\n", dbg_.elapsed, (long int)CLOCKS_PER_SEC) \
      )
-
-// ## Tracing
-//
-// Kartik Agaram exposed a nice idea about using traces to write better
-// tests: https://akkartik.name/post/tracing-tests
-// dbgtrk() is a simple implementation of that idea. It allows you to
-// specify which strings you expect to be present (or to be missing) in
-// a give portion of log
-//
-// dbgtrk("=must-exist","!must-not-exist") {
-//   code_emitting_log
-// }
-//
-// The actual test will be performed by dbglog that will check the strings
-// and inject a "PASS" or "FAIL".
-
-#undef  dbgtrk
-#define dbgtrk(...)   for (int dbg_ = 1; \
-                        dbg_ && !dbg_msg("TRK[: " #__VA_ARGS__); \
-                        dbg_ = (fputs("TRK]:\n",stderr) , 0))
-
 
 
 // ## Grouping

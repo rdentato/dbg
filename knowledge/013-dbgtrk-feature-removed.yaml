@@ -1,6 +1,0 @@
-statement: The dbgtrk tracking feature has been removed from the active dbg API, docs, tests, and examples. Future behavioral-checking ideas should be designed separately instead of reviving the old TRK marker/pattern system.
-trigger: User decided the tracking feature was too complicated and requested removing it everywhere as if it never existed.
-supersedes: 011
-status: active
-tags: [dbgtrk, removed, api, tracking]
-created: 2026-04-25

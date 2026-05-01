@@ -1,5 +1,0 @@
-statement: dbg.h memory wrappers now preserve strcat and strncat semantics, expose the memset wrapper through a macro, and use void * return types for memcpy and memmove wrappers.
-trigger: Expanded DEBUG_ALLOC tests required exercising and validating all memory/string wrappers.
-status: active
-tags: [debug-alloc, memory-wrappers, tests, bugfix]
-created: 2026-04-25

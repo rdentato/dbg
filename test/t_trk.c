@@ -63,5 +63,45 @@ int main(int argc, char *argv[])
     }
   }
 
+  dbgtst("dbgtrk with no expectations at all") {
+    dbgtrk() {
+      dbginf("anything");
+    }
+  }
+
+  dbgtst("two TRK blocks in sequence (no state leakage)") {
+    dbgtrk("=first") {
+      dbginf("first");
+    }
+    dbgtrk("=second") {
+      dbginf("second");
+    }
+  }
+
+  dbgtst("dbgtrk with substring matching") {
+    dbgtrk("=ab", "!xyz") {
+      dbginf("abc");  /* "ab" is substring of "abc" */
+      /* "xyz" is NOT a substring of any line */
+    }
+  }
+
+  dbgtst("dbgtrk with 8 expectations (max)") {
+    dbgtrk("=s0", "=s1", "=s2", "=s3", "=s4", "=s5", "=s6", "=s7") {
+      dbginf("s0 s1 s2 s3 s4 s5 s6 s7");
+    }
+  }
+
+  dbgtst("dbgtrk with 9 expectations (overflow)") {
+    dbgtrk("=e0", "=e1", "=e2", "=e3", "=e4", "=e5", "=e6", "=e7", "=e8") {
+      dbginf("e0");
+    }
+  }
+
+  dbgtst("dbgtrk with buffer overflow (strings too long)") {
+    dbgtrk("=This string is intentionally very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very long to overflow the buffer and test that path") {
+      /* nothing */
+    }
+  }
+
   dbginf("All dbgtrk tests completed");
 }

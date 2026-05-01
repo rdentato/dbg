@@ -20,6 +20,22 @@
 
 # Session Log
 
+## 2026-05-01
+
+- Worked on: dbgtrk() trace-based testing — header macro, dbglog tracking, and test suite.
+- Completed:
+  - User added `dbgtrk("=must-exist","!must-not-exist"){...}` macro to `src/dbg.h`.
+  - Created `test/t_trk.c` with 13 test cases covering all four expectation outcomes plus edge cases (empty block, no expectations, two blocks in sequence, substring matching, 8-expectation max, 9-expectation overflow, buffer overflow).
+  - Implemented TRK[: / TRK]: tracking in `src/dbglog.c`: parse expectations from TRK[: line, scan each log line with strstr, check at TRK]:, emit PASS/FAIL integrated with TST[: counters.
+  - Optimized through several iterations per user direction:
+    * Removed line buffering — scan on the fly, only store expectations.
+    * Removed `must_exist`/`seen` struct fields — encode type in prefix char (`=`/`!`) and seen flag in 0x80 high bit.
+    * Removed heap allocation — single `static unsigned char trkbuf[256]` with 8 offset slots at indices 0–7 and packed null-terminated strings starting at index 8.
+    * Simplified parse to copy prefix+content in one memcpy, no back-stepping in pointer arithmetic.
+  - Committed as `a88687f`.
+- Pending: None.
+- Notes: Test uses only dbg functions (dbginf, dbgtrk, dbgtst), no raw fprintf.
+
 ## 2026-04-25
 
 - Worked on: Refreshing `NOTES.md` to match the current repository state.

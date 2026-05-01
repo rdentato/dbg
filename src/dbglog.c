@@ -23,17 +23,9 @@ typedef struct {
   int cap;
 } line_list_t;
 
-typedef struct {
-  char *str;
-  int must_exist;  /* 1 for = (must appear), 0 for ! (must not appear) */
-  int seen;         /* 1 if found in buffered lines                */
-} trk_expect_t;
+#define TRK_BUF_SIZE    256
 
-typedef struct {
-  trk_expect_t *items;
-  int count;
-  int cap;
-} trk_expect_list_t;
+static unsigned char trkbuf[TRK_BUF_SIZE];
 
 typedef struct {
   char *name;
@@ -58,7 +50,6 @@ static int capture_output = 0;
 static line_list_t *captured_lines = NULL;
 
 static int in_trk = 0;
-static trk_expect_list_t trk_expects = {0};
 
 static void *xrealloc(void *ptr, size_t size)
 {
@@ -129,63 +120,70 @@ static int starts_with(const char *s, const char *prefix)
   return strncmp(s, prefix, strlen(prefix)) == 0;
 }
 
-static void trk_scan_line(const char *line, trk_expect_list_t *list)
+static void trk_reset(void)
+{
+  memset(trkbuf, 0, 8);
+}
+
+static void check_trk_expectations(void);
+static void emit_line(const char *fmt, ...);
+static void count_check(int failed);
+
+static void trk_scan_line(const char *line)
 {
   int i;
 
-  for (i = 0; i < list->count; i++) {
-    if (!list->items[i].seen && strstr(line, list->items[i].str))
-      list->items[i].seen = 1;
+  for (i = 0; i < 8; i++) {
+    unsigned int off = trkbuf[i];
+
+    if (off == 0) continue;
+    if (trkbuf[off] & 0x80) continue;
+    if (strstr(line, (const char *)(trkbuf + off + 1)))
+      trkbuf[off] |= 0x80;
   }
 }
 
-static void free_trk_expects(trk_expect_list_t *list)
-{
-  int i;
-
-  for (i = 0; i < list->count; i++) free(list->items[i].str);
-  free(list->items);
-  list->items = NULL;
-  list->count = 0;
-  list->cap = 0;
-}
-
-static int parse_trk_expects(const char *line, trk_expect_list_t *list)
+static int parse_trk_expects(const char *line)
 {
   const char *p = skip_spaces(line + 5); /* skip "TRK[:" */
+  int n = 0;
+  unsigned int pos = 8;
+
+  trk_reset();
 
   while (*p) {
-    /* skip whitespace and commas */
     while (*p == ' ' || *p == '\t' || *p == ',') p++;
     if (*p == '\0') break;
 
     if (*p != '"') return 0;
     p++;
 
-    int must_exist;
-    if (*p == '=')      { must_exist = 1; p++; }
-    else if (*p == '!') { must_exist = 0; p++; }
-    else return 0;
+    if (*p != '=' && *p != '!') return 0;
 
-    const char *start = p;
+    const char *start = p++;  /* points to prefix, then advance */
     const char *end = strchr(p, '"');
     if (!end) return 0;
 
-    size_t len = (size_t)(end - start);
-    char *str = xrealloc(NULL, len + 1);
-    memcpy(str, start, len);
-    str[len] = '\0';
+    size_t len = (size_t)(end - start);  /* includes prefix */
 
-    if (list->count == list->cap) {
-      list->cap = list->cap ? list->cap * 2 : 8;
-      list->items = xrealloc(list->items,
-                              sizeof(list->items[0]) * (size_t)list->cap);
+    if (n >= 8) {
+      emit_line("      FAIL: (trk: too many expectations)");
+      count_check(1);
+      return 0;
     }
-    list->items[list->count].str = str;
-    list->items[list->count].must_exist = must_exist;
-    list->items[list->count].seen = 0;
-    list->count++;
 
+    if (pos + 1 + len > TRK_BUF_SIZE) {
+      emit_line("      FAIL: (trk: buffer overflow)");
+      count_check(1);
+      return 0;
+    }
+
+    trkbuf[n] = (unsigned char)pos;
+    memcpy(trkbuf + pos, start, len);
+    trkbuf[pos + len] = '\0';
+
+    pos += 1 + (unsigned int)len;
+    n++;
     p = end + 1;
   }
 
@@ -273,7 +271,7 @@ static void reset_formatter(void)
   current_file[0] = '\0';
 
   if (in_trk) {
-    free_trk_expects(&trk_expects);
+    trk_reset();
     in_trk = 0;
   }
 }
@@ -325,26 +323,24 @@ static void count_check(int failed)
   }
 }
 
-static void check_trk_expectations(trk_expect_list_t *expects)
+static void check_trk_expectations(void)
 {
   int i;
 
-  for (i = 0; i < expects->count; i++) {
-    int failed = 0;
+  for (i = 0; i < 8; i++) {
+    unsigned int off = trkbuf[i];
 
-    if (expects->items[i].must_exist && !expects->items[i].seen)
-      failed = 1;
-    else if (!expects->items[i].must_exist && expects->items[i].seen)
-      failed = 1;
+    if (off == 0) continue;
+
+    unsigned char c = trkbuf[off];
+    int failed = (c == (0x80 | '!')) || (c == '=');
 
     if (failed)
-      emit_line("      FAIL: (%s%s)",
-                expects->items[i].must_exist ? "=" : "!",
-                expects->items[i].str);
+      emit_line("      FAIL: (%c%s)",
+                c & 0x7F, (const char *)(trkbuf + off + 1));
     else
-      emit_line("      PASS: (%s%s)",
-                expects->items[i].must_exist ? "=" : "!",
-                expects->items[i].str);
+      emit_line("      PASS: (%c%s)",
+                c & 0x7F, (const char *)(trkbuf + off + 1));
 
     count_check(failed);
   }
@@ -360,8 +356,8 @@ static void process_raw_line(char *line)
   /* --- TRK]: close tracking before emitting the marker ---------- */
   if (!strncmp(line, "TRK]:", 5)) {
     if (in_trk) {
-      check_trk_expectations(&trk_expects);
-      free_trk_expects(&trk_expects);
+      check_trk_expectations();
+      trk_reset();
       in_trk = 0;
     }
     emit_line("      TRK]:");
@@ -370,7 +366,7 @@ static void process_raw_line(char *line)
 
   /* --- scan each line inside an open TRK block ------------------ */
   if (in_trk)
-    trk_scan_line(line, &trk_expects);
+    trk_scan_line(line);
 
   /* --- emit the line -------------------------------------------- */
   if (source.has_location) {
@@ -390,11 +386,10 @@ static void process_raw_line(char *line)
   }
   else if (!strncmp(line, "TRK[:", 5)) {
     if (in_trk) {
-      check_trk_expectations(&trk_expects);
-      free_trk_expects(&trk_expects);
+      check_trk_expectations();
+      trk_reset();
     }
-    parse_trk_expects(line, &trk_expects);
-    in_trk = 1;
+    in_trk = (parse_trk_expects(line) != 0);
   }
   else if (!strncmp(line, "PASS:", 5)) {
     count_check(0);

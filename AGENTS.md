@@ -22,12 +22,11 @@ with a disposition, the disposition wins.
 ## Key Files & Directories
 
 | Path | Purpose | Access | Commit to git |
-|---|---|---|
+|---|---|---|---|
 | `AGENTS.md` | This file | read | yes |
+| `STATE.md` | Always-read session entry point: branch, active task, last stop, top questions, last decision, and pointers | read/write | yes |
 | `PLAN.md` | Complex or multi-session objectives, milestones, risks, blockers, and step statuses | read/write | yes |
-| `NOTES.md` | Temporary session context, open questions, blockers, and scratchpad | read/write | yes |
-| `CHANGES.md` | Per-commit change summary, created only when committing; may be absent and overwritten by the next commit | write/replace | no |
-| `knowledge/` | Durable project memory: numbered YAML entries | read/write | yes |
+| `journal/` | Append-only dated session records; one file per session | read/write | yes |
 | `evaluations/` | Scenario analyses | write-only | yes |
 
 File in the `evaluations/` directory are version-controlled but must
@@ -61,19 +60,23 @@ equivalent. Silence is not consent.
 - Never overwrite prior user changes based on inference, convenience, or your
   own judgment about what seems consistent.
 
+## Coding Discipline
+
+- **Assume aloud.** State assumptions before acting. If multiple interpretations exist, present them; do not pick silently.
+- **Minimum code.** No speculative features, abstractions, or configurability beyond what was asked. No error handling for impossible cases.
+- **Match style.** Follow existing conventions. Remove only orphans your own changes created; flag pre-existing dead code, do not delete it.
+- **Verifiable goals.** Restate the task as a checkable outcome (e.g., "tests for invalid inputs pass"). Loop until verified.
+
 ## User Commands
 
 | Command | Action |
 |---|---|
-| `status` | Read `PLAN.md` + `NOTES.md`; report state |
+| `status` | Read `STATE.md` + `PLAN.md`; report state |
 | `plan` | Show plan + next steps |
 | `continue` | Resume from last session |
-| `checkpoint` | End session: update active plan state, promote durable notes to `knowledge/`, summarize |
-| `note: <text>` | Append to **Session Log** in `NOTES.md` |
-| `remember: <fact>` | Capture one durable entry to `knowledge/` |
-| `recap` | Review session; promote clear durable facts; ask about uncertain candidates |
-| `knowledge` | List active entries (filename + statement) |
-| `knowledge search: <kw>` | Grep active entries |
+| `checkpoint` | End session: update `STATE.md`, update active plan state, append journal summary, report next step |
+| `note: <text>` | Append to the active file in `journal/` |
+| `recap` | Review recent journal entries and propose updates to `STATE.md`, `PLAN.md`, or project docs |
 | `evaluate: <question>` | Write `evaluations/NNN-slug.md`; summarize; ask next step; Do NOT modify the codebase as part of an evaluation. |
 
 ## Activity Management
@@ -90,97 +93,70 @@ Statuses in `PLAN.md`: `[ ]` todo · `[~]` doing · `[x]` done · `[!]` hold.
 - `[!]` blocks all substeps. Never work on a held step.
 - When blocked, set `[!]` and record cause under **Known Issues**.
 
-## Knowledge System
+## Continuity System
 
-`knowledge/` is authoritative durable project memory. It is for facts that should survive sessions: architecture, conventions, decisions, gotchas, user preferences, workflows, and stable project context.
+`STATE.md` is the mandatory session entry point. It is intentionally short and
+actively curated so it can be read at the start of every session without
+significant context cost.
 
-`NOTES.md` is temporary. It may hold in-progress observations, unresolved questions, and short-term working state, but durable facts should be promoted to `knowledge/` as soon as they are clear.
+`PLAN.md` holds complex or multi-session objectives, milestones, risks,
+blockers, and decisions that affect current work.
 
-### Entry format
+`journal/` holds append-only session records. Create one dated file per
+session and append meaningful events, decisions, blockers, and unresolved
+questions as they happen. Do not edit a journal file after the session ends.
 
-```yaml
-# knowledge/NNN-keyword1-keyword2-keyword3.yaml
-statement: <1–2 sentences>
-trigger: <what decision or event prompted this>
-supersedes: NNN              # optional
-status: active               # active | deprecated (default: active)
-tags: [<extra searchable terms>]
-created: YYYY-MM-DD
-```
+Durable decisions belong in normal project documentation, code-adjacent docs,
+or `PLAN.md` decision logs. Do not maintain a separate generalized knowledge
+database.
 
-- `NNN` = next available zero-padded sequence.
-- Keywords are the primary retrieval index: 3–5, lowercase, dash-separated.
-- Replacement: new entry sets `supersedes:`, old flips to
-  `status: deprecated`. Never delete.
+### STATE.md Structure
 
-### Acquisition
+Keep `STATE.md` to roughly one page with these sections:
 
-- Capture durable knowledge proactively when it is discovered from disk, established by user instruction, or settled by an implemented decision.
-- Do not wait for `remember:` when the fact is clearly durable and non-sensitive.
-- Ask before recording speculative interpretations, private/sensitive data, or preferences that were not clearly stated.
-- If a fact may be useful but is not yet settled, place it in `NOTES.md` under **Knowledge Candidates** and revisit at `checkpoint` or `recap`.
-- Keep entries small: one fact or closely related decision per file.
+1. **Current Branch** — branch or worktree context.
+2. **Active Task** — what is being worked on now.
+3. **Last Stop** — where the previous session ended.
+4. **Open Questions** — top three questions only.
+5. **Last Decision** — most recent meaningful decision.
+6. **Pointers** — relevant `PLAN.md`, journal, docs, or code paths.
 
-### Retrieval
+### Journal Format
 
-- Consult `knowledge/` with targeted filename search or content search when a task touches a familiar area.
-- Prefer filename keywords first; grep contents when exact wording matters.
-- At the start of substantial work, list `knowledge/` filenames when no reliable keyword is known; read only relevant entries.
-- Do not read all knowledge entry contents at session start.
+Use `journal/YYYY-MM-DD-slug.md` unless a clearer local convention exists.
+Each entry should synthesize rather than quote. Prefer short bullets for:
 
-```bash
-ls knowledge/*keyword*                              # filename match
-grep -ril "keyword" knowledge/                      # deep match
-grep -ril "keyword" knowledge/ | xargs grep -lP "status:\s*active"
-```
-
-When multiple active entries match, prefer higher `NNN`.
-
-### Conflict resolution
-
-`knowledge/` is the source of truth. `NOTES.md` is in-progress thought and
-yields to it. On any conflict, flag it and ask.
+- Worked on
+- Completed
+- Pending
+- Decisions
+- Blockers
+- Notes
 
 ## Session Workflow
 
-**Start.** Confirm the goal. Read `PLAN.md` and `NOTES.md` on
-`status`, `plan`, `continue`, when the goal is unclear, or when work is part
-of an active multi-session plan. For significant work, open or update a
-Session Log entry in `NOTES.md` for temporary context only.
+**Start.** Read `STATE.md` first, then confirm the goal. Read `PLAN.md` when
+the task is complex, multi-session, mentioned by `STATE.md`, or requested by
+the user. For significant work, create or resume one active journal file for
+the session.
 
 **During.** Apply activity management. Log meaningful errors,
-decisions, blockers, and unresolved questions to `NOTES.md`. Promote clear
-durable facts to `knowledge/` without waiting for the session to end. Consult
-`knowledge/` per retrieval rules.
+decisions, blockers, and unresolved questions to the active journal file.
+Update `PLAN.md` when planned work changes state. Put durable decisions in
+project docs or `PLAN.md`, not in a separate memory store.
 
-**End (`checkpoint`).** Update active `PLAN.md` items if any. Append or update
-a Session Log entry: *Worked on / Completed / Pending / Notes*. Promote clear
-Knowledge Candidates to `knowledge/`; ask about uncertain candidates. Report
-status + recommended next step.
-
-## NOTES.md Structure
-
-Fixed sections, in order:
-
-1. **Current Context** — what's active right now
-2. **Open Questions** — awaiting user input
-3. **Known Issues / Blockers** — causes of `[!]` statuses
-4. **Knowledge Candidates** — potentially durable facts awaiting confirmation or evidence
-5. **Session Log** — dated entries: Worked on / Completed / Pending / Notes
-
-`note: ...` always appends to Session Log under today's date,
-creating the entry if absent.
-
-Do not use `NOTES.md` as the long-term project memory. If a note becomes stable and useful beyond the current session, move or copy its synthesis into `knowledge/`.
+**End (`checkpoint`).** Update `STATE.md` with the current branch, active task,
+last stop, top open questions, last decision, and pointers. Update active
+`PLAN.md` items if any. Append a final journal summary and then treat that
+journal file as closed. Report status + recommended next step.
 
 ## Bootstrap & Recovery
 
-- Missing `PLAN.md` / `NOTES.md`: create empty
-  with section headers; flag to user.
-- Missing `CHANGES.md`: tolerate unless preparing a commit.
-- Missing `knowledge/`: create empty directory.
-- Malformed YAML: report filename + line; no auto-repair.
-- Dangling `supersedes:`: report; ask whether to fix or tolerate.
+- Missing `STATE.md`: create a terse file with the required sections and flag
+  to user.
+- Missing `PLAN.md`: create an empty file when complex or multi-session work
+  needs one; otherwise tolerate.
+- Missing `journal/`: create the directory before writing a session record.
 
 ## Working Conventions
 
@@ -189,10 +165,6 @@ Do not use `NOTES.md` as the long-term project memory. If a note becomes stable 
 - Test when feasible.
 
 ## Git
-
-Before committing: create or overwrite `CHANGES.md` with a line per committed
-file and a short rationale. `CHANGES.md` describes only the current commit; it
-is not append-only and may be absent between commits.
 
 - **Commits.** State what will be committed, then proceed.
 - **Destructive ops** (`reset`, force-push, `rebase`, branch delete):

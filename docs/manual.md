@@ -223,6 +223,40 @@ dbgblk {
 
 This is useful when a block is too large or too imperative to fit naturally inside a single message macro. Unlike clock, verbose, and test marker blocks, `dbgblk` is the block form to use when the enclosed code itself must disappear from non-test builds.
 
+### `dbgtrk(...) { ... }`
+
+Use `dbgtrk` for trace-based testing: declare which strings you expect to appear (or not appear) in the log output of a block.
+
+```c
+dbgtst("allocation pattern") {
+  dbgtrk("=alloc(16)", "!alloc(0)") {
+    void *p = malloc(16);
+    dbginf("alloc(%zu)", 16);
+    free(p);
+  }
+}
+```
+
+Each expectation is a string with a prefix:
+
+- `=string` — the string must appear somewhere in the block's log output.
+- `!string` — the string must **not** appear.
+
+Expectations without a prefix are not valid. You may mix `=` and `!` expectations in a single `dbgtrk` call.
+
+`dbgtrk` behaves differently from other test macros: the block itself does not perform pass/fail checks at runtime. Instead it emits `TRK[:` before the block and `TRK]:` after it. The `dbglog` post-processing tool reads the raw log and compares the captured lines between those markers against the declared expectations, injecting `PASS` or `FAIL` lines.
+
+```text
+TRK[: =alloc(16) !alloc(0)
+INF:: t_trk.c:22 alloc(16)
+TRK]:
+PASS: TRK[: =alloc(16) !alloc(0)
+```
+
+A `dbgtrk` block can hold up to 8 expectations. Additional expectations are silently ignored. Expectation strings that exceed the internal buffer are truncated and will never match.
+
+`dbgtrk` blocks cannot be nested. Start each trace block at top level inside a `dbgtst` or other enclosing scope.
+
 ## Timing With `dbgclk`
 
 Use `dbgclk(...) { ... }` to measure CPU time spent in a block.
