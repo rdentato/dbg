@@ -252,6 +252,18 @@ typedef struct {
        fprintf(stderr,"CLK]: +%ld/%ld sec.\n", dbg_.elapsed, (long int)CLOCKS_PER_SEC) \
      )
 
+#undef dbgnow
+#define dbgnow(...)  \
+  for (dbgclk_t dbg_ = {.elapsed = -1}   \
+      ; \
+       (dbg_.elapsed < 0) && ( \
+          time(&dbg_.time), dbg_.time_tm=localtime(&dbg_.time),    \
+          strftime(dbg_.tstr,32,"%Y-%m-%d %H:%M:%S",dbg_.time_tm),\
+          fprintf(stderr,"NOW=: %s ",dbg_.tstr), dbg_msg("" __VA_ARGS__) \
+       )\
+      ; \
+       dbg_.elapsed=1 \
+     )
 
 // ## Grouping
 // 
