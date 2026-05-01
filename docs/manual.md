@@ -181,7 +181,7 @@ dbgchk(count == expected, "");
 dbgchk(buffer[0] == '\0', "");
 ```
 
-`dbgchk` sets `errno` to `0` when the expression passes and to `1` when it fails. Treat this as immediate check state only; ordinary program code may overwrite `errno` later.
+`dbgchk` does not set `errno`. If you need to react programmatically to a check failure, use `dbgmst` to abort or a regular `if` statement outside the debug macros.
 
 Use a formatted message when a failure needs context.
 
@@ -517,7 +517,7 @@ DBG_IO(dbginf("open %s", path));
 DBG_IO(dbgchk(fd >= 0, "open failed for %s", path));
 ```
 
-Do not depend on `errno` as a long-lived test result. `dbgchk` writes it for immediate convenience only. For rich reports and accumulated results, use external log processing rather than adding counters to application code.
+Do not accumulate pass/fail state in application code. `dbg.h` leaves counting and reporting to external log processing. Use `dbglog` or your own tooling rather than adding counters to production code.
 
 ## Complete Example
 
