@@ -45,9 +45,8 @@
 
 #define DBG_OFF(...)
 
-#define _dbg_msg DBG_OFF
-#define _dbg_prt DBG_OFF
 #define _dbgtst DBG_OFF
+#define _dbgtrk DBG_OFF
 #define _dbginf DBG_OFF
 #define _dbgvrb DBG_OFF
 #define _dbgwrn DBG_OFF
@@ -63,8 +62,8 @@
 // to ensure the code still compiles, but they should do nothing.
 
 #define DBG_ON  DBG_OFF
-#define dbg_prt _dbg_prt
 #define dbgtst _dbgtst
+#define dbgtrk _dbgtrk
 #define dbginf _dbginf
 #define dbgvrb _dbgvrb
 #define dbgwrn _dbgwrn
@@ -114,17 +113,12 @@ static volatile int dbg_zero = 0;
 
 // ## Printing messages
 //
-//   dbg_prt(char *, ...)     Internal message primitive for raw stderr output.
-//   dbg_msg(char *, ...)     Internal message primitive that adds filename and line.
 //   dbgvrb(char *, ...) {...} Marks enclosed stderr output as program output.
 //   dbginf(char *, ...)      Prints an "INFO:" message depending on the DEBUG level.
 //   dbgwrn(char *, ...)      Prints a  "WARN:" message depending on the DEBUG level.
 //   dbgerr(char *, ...)      Prints a  "FAIL:" message.
 
-#undef  dbg_prt
-#define dbg_prt(...)  (fprintf(stderr,__VA_ARGS__), dbg_zero)
-
-#undef  dbg_msg
+// Internal helpers
 #define dbg_msg(...)  (fprintf(stderr,__VA_ARGS__),     \
                       fprintf(stderr," \x0F%s:%d\n",__FILE__,__LINE__), \
                       dbg_zero)
@@ -223,13 +217,35 @@ typedef struct {
        (dbg_.elapsed < 0) && ( \
           time(&dbg_.time), dbg_.time_tm=localtime(&dbg_.time),    \
           strftime(dbg_.tstr,32,"%Y-%m-%d %H:%M:%S",dbg_.time_tm),\
-          dbg_prt("CLK[: %s ",dbg_.tstr), dbg_msg(__VA_ARGS__) , \
+          fprintf(stderr,"CLK[: %s ",dbg_.tstr), dbg_msg(__VA_ARGS__) , \
           dbg_.clk = clock() \
        ) ;   \
       \
        dbg_.elapsed=(long int)(clock()-dbg_.clk),               \
        fprintf(stderr,"CLK]: +%ld/%ld sec.\n", dbg_.elapsed, (long int)CLOCKS_PER_SEC) \
      )
+
+// ## Tracing
+//
+// Kartik Agaram exposed a nice idea about using traces to write better
+// tests: https://akkartik.name/post/tracing-tests
+// dbgtrk() is a simple implementation of that idea. It allows you to
+// specify which strings you expect to be present (or to be missing) in
+// a give portion of log
+//
+// dbgtrk("=must-exist","!must-not-exist") {
+//   code_emitting_log
+// }
+//
+// The actual test will be performed by dbglog that will check the strings
+// and inject a "PASS" or "FAIL".
+
+#undef  dbgtrk
+#define dbgtrk(...)   for (int dbg_ = 1; \
+                        dbg_ && !dbg_msg("TRK[: " #__VA_ARGS__); \
+                        dbg_ = (fputs("TRK]:\n",stderr) , 0))
+
+
 
 // ## Grouping
 // 

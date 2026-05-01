@@ -24,6 +24,18 @@ typedef struct {
 } line_list_t;
 
 typedef struct {
+  char *str;
+  int must_exist;  /* 1 for = (must appear), 0 for ! (must not appear) */
+  int seen;         /* 1 if found in buffered lines                */
+} trk_expect_t;
+
+typedef struct {
+  trk_expect_t *items;
+  int count;
+  int cap;
+} trk_expect_list_t;
+
+typedef struct {
   char *name;
   char *summary;
   line_list_t lines;
@@ -44,6 +56,9 @@ static char current_file[512] = "";
 
 static int capture_output = 0;
 static line_list_t *captured_lines = NULL;
+
+static int in_trk = 0;
+static trk_expect_list_t trk_expects = {0};
 
 static void *xrealloc(void *ptr, size_t size)
 {
@@ -112,6 +127,69 @@ static const char *skip_line_number(const char *s)
 static int starts_with(const char *s, const char *prefix)
 {
   return strncmp(s, prefix, strlen(prefix)) == 0;
+}
+
+static void trk_scan_line(const char *line, trk_expect_list_t *list)
+{
+  int i;
+
+  for (i = 0; i < list->count; i++) {
+    if (!list->items[i].seen && strstr(line, list->items[i].str))
+      list->items[i].seen = 1;
+  }
+}
+
+static void free_trk_expects(trk_expect_list_t *list)
+{
+  int i;
+
+  for (i = 0; i < list->count; i++) free(list->items[i].str);
+  free(list->items);
+  list->items = NULL;
+  list->count = 0;
+  list->cap = 0;
+}
+
+static int parse_trk_expects(const char *line, trk_expect_list_t *list)
+{
+  const char *p = skip_spaces(line + 5); /* skip "TRK[:" */
+
+  while (*p) {
+    /* skip whitespace and commas */
+    while (*p == ' ' || *p == '\t' || *p == ',') p++;
+    if (*p == '\0') break;
+
+    if (*p != '"') return 0;
+    p++;
+
+    int must_exist;
+    if (*p == '=')      { must_exist = 1; p++; }
+    else if (*p == '!') { must_exist = 0; p++; }
+    else return 0;
+
+    const char *start = p;
+    const char *end = strchr(p, '"');
+    if (!end) return 0;
+
+    size_t len = (size_t)(end - start);
+    char *str = xrealloc(NULL, len + 1);
+    memcpy(str, start, len);
+    str[len] = '\0';
+
+    if (list->count == list->cap) {
+      list->cap = list->cap ? list->cap * 2 : 8;
+      list->items = xrealloc(list->items,
+                              sizeof(list->items[0]) * (size_t)list->cap);
+    }
+    list->items[list->count].str = str;
+    list->items[list->count].must_exist = must_exist;
+    list->items[list->count].seen = 0;
+    list->count++;
+
+    p = end + 1;
+  }
+
+  return 1;
 }
 
 static void emit_line(const char *fmt, ...)
@@ -193,6 +271,11 @@ static void reset_formatter(void)
   file_checks = 0;
   file_failed_checks = 0;
   current_file[0] = '\0';
+
+  if (in_trk) {
+    free_trk_expects(&trk_expects);
+    in_trk = 0;
+  }
 }
 
 static void switch_file(source_t *source)
@@ -242,6 +325,31 @@ static void count_check(int failed)
   }
 }
 
+static void check_trk_expectations(trk_expect_list_t *expects)
+{
+  int i;
+
+  for (i = 0; i < expects->count; i++) {
+    int failed = 0;
+
+    if (expects->items[i].must_exist && !expects->items[i].seen)
+      failed = 1;
+    else if (!expects->items[i].must_exist && expects->items[i].seen)
+      failed = 1;
+
+    if (failed)
+      emit_line("      FAIL: (%s%s)",
+                expects->items[i].must_exist ? "=" : "!",
+                expects->items[i].str);
+    else
+      emit_line("      PASS: (%s%s)",
+                expects->items[i].must_exist ? "=" : "!",
+                expects->items[i].str);
+
+    count_check(failed);
+  }
+}
+
 static void process_raw_line(char *line)
 {
   source_t source;
@@ -249,6 +357,22 @@ static void process_raw_line(char *line)
   trim_newline(line);
   split_source(line, &source);
 
+  /* --- TRK]: close tracking before emitting the marker ---------- */
+  if (!strncmp(line, "TRK]:", 5)) {
+    if (in_trk) {
+      check_trk_expectations(&trk_expects);
+      free_trk_expects(&trk_expects);
+      in_trk = 0;
+    }
+    emit_line("      TRK]:");
+    return;
+  }
+
+  /* --- scan each line inside an open TRK block ------------------ */
+  if (in_trk)
+    trk_scan_line(line, &trk_expects);
+
+  /* --- emit the line -------------------------------------------- */
   if (source.has_location) {
     switch_file(&source);
     emit_line("%5d %s", source.line, line);
@@ -260,8 +384,17 @@ static void process_raw_line(char *line)
     emit_line("      %s", line);
   }
 
+  /* --- open markers --------------------------------------------- */
   if (!strncmp(line, "TST[:", 5)) {
     open_test();
+  }
+  else if (!strncmp(line, "TRK[:", 5)) {
+    if (in_trk) {
+      check_trk_expectations(&trk_expects);
+      free_trk_expects(&trk_expects);
+    }
+    parse_trk_expects(line, &trk_expects);
+    in_trk = 1;
   }
   else if (!strncmp(line, "PASS:", 5)) {
     count_check(0);
@@ -406,6 +539,7 @@ static const char *line_class(const char *line)
   if (starts_with(trimmed, "VRB[:") || starts_with(trimmed, "VRB]:")) return "verbose";
   if (starts_with(trimmed, "MTRK:") || starts_with(trimmed, "MCHK:")) return "memory";
   if (starts_with(trimmed, "RSLT:")) return starts_with(trimmed, "RSLT: 0 /") ? "pass" : "fail";
+  if (starts_with(trimmed, "TRK[:") || starts_with(trimmed, "TRK]:")) return "trk";
   if (starts_with(trimmed, "`")) return "detail";
   return "plain";
 }
@@ -443,7 +577,7 @@ static void render_html(line_list_t *lines)
   puts("details.fail summary{background:#34161c}");
   puts("pre{margin:0;padding:1rem;overflow:auto;background:#0d1117;font:14px/1.45 ui-monospace,monospace}");
   puts(".line{display:block;white-space:pre}");
-  puts(".line.pass{color:#3fb950}.line.fail,.line.error{color:#ff7b72}.line.warn{color:#d29922}.line.info{color:#79c0ff}.line.test{color:#c297ff}.line.clock{color:#a5d6ff}.line.verbose{color:#8ddb8c}.line.memory{color:#ffa657}.line.detail{color:#9da7b3}");
+  puts(".line.pass{color:#3fb950}.line.fail,.line.error{color:#ff7b72}.line.warn{color:#d29922}.line.info{color:#79c0ff}.line.test{color:#c297ff}.line.clock{color:#a5d6ff}.line.verbose{color:#8ddb8c}.line.memory{color:#ffa657}.line.detail{color:#9da7b3}.line.trk{color:#c297ff}");
   puts(".badge{font-weight:500;color:#9da7b3}.fail .badge{color:#ffb3ad}.pass .badge{color:#8ddb8c}");
   puts("</style>");
   puts("</head>\n<body>");
