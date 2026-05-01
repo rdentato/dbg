@@ -55,6 +55,7 @@
 #define _dbgmst DBG_OFF
 #define _dbgptr DBG_OFF
 #define _dbgclk DBG_OFF
+#define _dbgnow DBG_OFF
 #define _dbgblk while(0)
 
 // ## No DEBUG
@@ -71,6 +72,7 @@
 #define dbgchk _dbgchk
 #define dbgmst _dbgmst
 #define dbgclk _dbgclk
+#define dbgnow _dbgnow
 #define dbgblk _dbgblk
 #define dbgptr _dbgptr
 
