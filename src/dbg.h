@@ -209,7 +209,7 @@ static char *dbg_nested_track = "";
 #define dbgtrk(...) \
      if (dbg_nested_track[0]) ; \
      else for (int dbg_nested_track = 1; \
-               dbg_nested_track && !dbg_msg("TRK[: " #__VA_ARGS__); \
+               dbg_nested_track && !dbg_msg("TRK[: %s", #__VA_ARGS__); \
                fputs("TRK]:\n",stderr), dbg_nested_track = 0)
 
 
