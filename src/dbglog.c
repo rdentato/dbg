@@ -324,43 +324,43 @@ static int check_M_question(char *msg, char *out, size_t osize)
   if (has_prefix(msg, "M?")) msg += 2;
   nt = tokenize(msg, t, 6);
   if (nt < 1) {
-    snprintf(out, osize, "FAIL malformed M? record");
+    snprintf(out, osize, "FAIL: malformed M? record");
     return 0;
   }
 
   if (!strcmp(t[0], "pointer")) {
     if (nt < 2) {
-      snprintf(out, osize, "FAIL malformed M?pointer record");
+      snprintf(out, osize, "FAIL: malformed M?pointer record");
       return 0;
     }
     p1 = parse_ptr_token(t[1]);
     ok = (p1 == 0) || alloc_find(p1, NULL);
-    snprintf(out, osize, "%-5spointer 0x%zX",
+    snprintf(out, osize, "%-5s: pointer 0x%zX",
              ok ? "PASS" : "FAIL", (size_t)p1);
   } else if (!strcmp(t[0], "memset")) {
     if (nt < 3) {
-      snprintf(out, osize, "FAIL malformed M?memset record");
+      snprintf(out, osize, "FAIL: malformed M?memset record");
       return 0;
     }
     p1 = parse_ptr_token(t[1]);
     sz = parse_size_token(t[2]);
     ok = alloc_find(p1, &avail);
     ok = ok && (sz <= avail);
-    snprintf(out, osize, "%-5smemset 0x%zX +%zu (buf=%zu)",
+    snprintf(out, osize, "%-5s: memset 0x%zX +%zu (buf=%zu)",
              ok ? "PASS" : "FAIL", (size_t)p1, sz, avail);
   } else if (is_mem_check_op(t[0])) {
     if (nt < 4) {
-      snprintf(out, osize, "FAIL malformed M?%s record", t[0]);
+      snprintf(out, osize, "FAIL: malformed M?%s record", t[0]);
       return 0;
     }
     p1 = parse_ptr_token(t[1]);
     sz = parse_size_token(t[3]);
     ok = alloc_find(p1, &avail);
     if (ok && sz > avail) ok = 0;
-    snprintf(out, osize, "%-5s%s 0x%zX +%zu (buf=%zu)",
+    snprintf(out, osize, "%-5s: %s 0x%zX +%zu (buf=%zu)",
              ok ? "PASS" : "FAIL", t[0], (size_t)p1, sz, avail);
   } else {
-    snprintf(out, osize, "FAIL unknown M? operation: %s", t[0]);
+    snprintf(out, osize, "FAIL: unknown M? operation: %s", t[0]);
     return 0;
   }
   return ok;

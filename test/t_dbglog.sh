@@ -24,26 +24,26 @@ not_contains() {
 
 # Digit-only pointer tokens are hex, not decimal.
 out=$(printf 'M:malloc 16 FFF%sreg.c:1\nM?pointer 1000%sreg.c:2\n' "$SEP" "$SEP" | "$DBGLOG") || fail "digit-only hex pointer case failed"
-contains "$out" 'PASS pointer 0x1000'
+contains "$out" 'PASS : pointer 0x1000'
 
 # Failed realloc keeps the old allocation alive.
 out=$(printf 'M:malloc 16 FFF%sreg.c:1\nM:realloc FFF 32 0%sreg.c:2\nM?pointer 1000%sreg.c:3\n' "$SEP" "$SEP" "$SEP" | "$DBGLOG") || fail "realloc failure case failed"
-contains "$out" 'PASS pointer 0x1000'
+contains "$out" 'PASS : pointer 0x1000'
 
 # realloc(ptr, 0) frees the old allocation in dbglog's model.
 out=$(printf 'M:malloc 16 FFF%sreg.c:1\nM:realloc FFF 0 0%sreg.c:2\nM?pointer 1000%sreg.c:3\n' "$SEP" "$SEP" "$SEP" | "$DBGLOG") || fail "realloc zero case failed"
-contains "$out" 'FAIL pointer 0x1000'
+contains "$out" 'FAIL : pointer 0x1000'
 
 # Pointer-range checks must not fail when base + size would overflow.
 out=$(printf 'M:malloc 32 FFFFFFFFFFFFFFF0%sreg.c:1\nM?memset FFFFFFFFFFFFFFF8 4%sreg.c:2\n' "$SEP" "$SEP" | "$DBGLOG") || fail "pointer overflow case failed"
-contains "$out" 'PASS memset 0xFFFFFFFFFFFFFFF8 +4'
+contains "$out" 'PASS : memset 0xFFFFFFFFFFFFFFF8 +4'
 
 # Malformed and unknown M? records fail explicitly.
 out=$(printf 'M?memset 1000%sreg.c:1\n' "$SEP" | "$DBGLOG") || fail "malformed M?memset case failed"
-contains "$out" 'FAIL malformed M?memset record'
+contains "$out" 'FAIL: malformed M?memset record'
 
 out=$(printf 'M?bogus 1000 2%sreg.c:1\n' "$SEP" | "$DBGLOG") || fail "unknown M? case failed"
-contains "$out" 'FAIL unknown M? operation: bogus'
+contains "$out" 'FAIL: unknown M? operation: bogus'
 
 # Plain fallback text that starts with an event letter is not rewritten.
 out=$(printf 'Wplain line\n' | "$DBGLOG") || fail "fallback event-like line case failed"
@@ -53,7 +53,7 @@ not_contains "$out" 'WARN p'
 # No-source M? records must not grow a fake :0 source location.
 out=$(printf 'M?pointer 0\n' | "$DBGLOG") || fail "no-source M? case failed"
 not_contains "$out" ':0'
-contains "$out" 'PASS pointer 0x0'
+contains "$out" 'PASS : pointer 0x0'
 
 # -F applies to HTML mode too.
 out=$(printf 'P:ok%sreg.c:1\nF:bad%sreg.c:2\n' "$SEP" "$SEP" | "$DBGLOG" -F -H) || fail "-F -H case failed"
@@ -82,7 +82,7 @@ trap 'rm -f "$f1" "$f2"' EXIT HUP INT TERM
 printf 'M:malloc 16 FFF\n' > "$f1"
 printf 'M?pointer 1000\n' > "$f2"
 out=$("$DBGLOG" "$f1" "$f2") || fail "multi-file state case failed"
-contains "$out" 'PASS pointer 0x1000'
+contains "$out" 'PASS : pointer 0x1000'
 
 # Unterminated blocks are reported at end of input.
 out=$( (printf 'V[unterminated\nbody\n' | "$DBGLOG" >/dev/null) 2>&1 )
