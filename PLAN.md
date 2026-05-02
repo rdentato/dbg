@@ -123,4 +123,4 @@ Implemented:
 
 ## Next Step
 
-- Begin Phase 2 implementation: `DBG_PUTC` macro + `dbg_emit` primitives in `src/dbg.h`.
+- Phase 2: `DBG_PUTC` macro + `dbg_emit` primitives in `src/dbg.h` (on hold).

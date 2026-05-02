@@ -57,5 +57,13 @@
 
 ## Checkpoint
 
-Session end. Phase 1 complete, dbglog rewritten and tested. Phase 2 on hold.
-Next: run full test suite, commit Phase 1 changes.
+Session end. All Phase 1 work committed and pushed (2 commits: c8014af, 1c94534).
+
+Delivered:
+- Single-byte event codes in dbg.h
+- dbglog.c rewritten from scratch (unified text/HTML, M? tracking, trk eval)
+- New test t_alloc_fail.c (9 intentional M? violations)
+- Manual updated for new codes and dbglog
+- Full test suite passes (8 tests, 0 exit failures)
+
+Next: Phase 2 (raw-emit pipeline) — on hold.
