@@ -102,7 +102,7 @@ if (!fp) {
 }
 ```
 
-Current output begins with `EROR:` and includes the source location.
+Current output begins with `ERROR:` and includes the source location.
 
 ### `dbgwrn(...)`
 
@@ -137,7 +137,7 @@ dbgvrb("parser stderr output") {
 }
 ```
 
-This emits `VRB[: ...` before the block and `VRB]:` after it. The enclosed output is ordinary program output; the markers merely classify it for later log processing.
+This emits `VERB [ ...` before the block and `VERB ]` after it. The enclosed output is ordinary program output; the markers merely classify it for later log processing.
 
 Use `dbgvrb` when:
 
@@ -163,7 +163,7 @@ dbgtst("vector push/pop") {
 }
 ```
 
-At test level, the block emits `TST[: ...` before the body and `TST]:` after the body. Future reporting tools can use these markers to group checks.
+At test level, the block emits `TEST [ ...` before the body and `TEST ]` after the body. Future reporting tools can use these markers to group checks.
 
 `dbgtst` does not generate a `main` function, count totals, or return a test result by itself. The current design keeps `dbg.h` lightweight; richer reporting belongs in external tooling.
 
@@ -244,13 +244,14 @@ Each expectation is a string with a prefix:
 
 Expectations without a prefix are not valid. You may mix `=` and `!` expectations in a single `dbgtrk` call.
 
-`dbgtrk` behaves differently from other test macros: the block itself does not perform pass/fail checks at runtime. Instead it emits `TRK[:` before the block and `TRK]:` after it. The `dbglog` post-processing tool reads the raw log and compares the captured lines between those markers against the declared expectations, injecting `PASS` or `FAIL` lines.
+`dbgtrk` behaves differently from other test macros: the block itself does not perform pass/fail checks at runtime. Instead it emits `TRACK[` before the block and `TRACK]` after it. The `dbglog` post-processing tool reads the raw log and compares the captured lines between those markers against the declared expectations, injecting `PASS :` or `FAIL :` lines.
 
 ```text
-TRK[: =alloc(16) !alloc(0)
-INF:: t_trk.c:22 alloc(16)
-TRK]:
-PASS: TRK[: =alloc(16) !alloc(0)
+TRACK[ "=alloc(16)", "!alloc(0)" t_trk.c:22
+INFO : alloc(16) t_trk.c:22
+TRACK]
+PASS : (=alloc(16)) t_trk.c:20
+PASS : (!alloc(0)) t_trk.c:20
 ```
 
 A `dbgtrk` block can hold up to 8 expectations. Additional expectations are silently ignored. Expectation strings that exceed the internal buffer are truncated and will never match.
@@ -267,7 +268,7 @@ dbgclk("sort %zu items", nitems) {
 }
 ```
 
-The macro prints a `CLK[:` start marker with a timestamp and description, runs the block, then prints a `CLK]:` elapsed-time line. It uses the C library `clock()` function, so it measures CPU time rather than wall-clock time.
+The macro prints a `CLOCK[` start marker with a millisecond timestamp and description, runs the block, then prints a `CLOCK]` elapsed-time line. It uses `clock_gettime(CLOCK_REALTIME)`, measuring wall-clock time in milliseconds. On Arduino it uses `millis()` instead.
 
 When timing is disabled, the timing output is omitted but the enclosed code still runs.
 
@@ -282,32 +283,6 @@ Poor uses:
 - Precise benchmarking.
 - Measuring sleep, I/O wait, or wall-clock latency.
 - Making pass/fail decisions from tiny timing differences.
-
-## Timestamps With `dbgnow`
-
-Use `dbgnow` to record wall-clock timestamps in the log.
-
-```c
-dbgnow("processing started");
-do_work();
-dbgnow("processing finished");
-```
-
-`dbgnow` emits a `NOW=:` line with a `YYYY-MM-DD HH:MM:SS` timestamp followed by an optional message. It uses `time()` from the C library, so resolution is seconds.
-
-```text
-NOW=: 2026-05-01 13:18:12 processing started  t_now.c:23
-```
-
-`dbgnow` is not a block macro. Each call produces a single timestamp line. Use it to mark events, phases, or checkpoints in a log.
-
-Good uses:
-
-- Marking the start and end of a long-running operation.
-- Correlating debug output with external log timestamps.
-- Recording when a particular code path is reached during debugging.
-
-Do not use `dbgnow` for precision timing — it measures wall-clock time at second resolution and is not suitable for measuring short intervals. Use `dbgclk` for block-level CPU timing.
 
 ## Grouping Debug Code
 
@@ -379,7 +354,7 @@ With `DEBUG_ALLOC`, calls to these functions are redefined through `dbg` wrapper
 - `memmove`
 - `memset`
 
-Allocation wrappers emit `MTRK` lines. Memory/string operation wrappers emit `MCHK` lines.
+Allocation wrappers emit `M:` lines. Memory/string operation and pointer-check wrappers emit `M?` lines.
 
 Example:
 
@@ -420,46 +395,88 @@ Build it with:
 make -C src
 ```
 
-Current options:
+Options:
 
 ```text
 -h  show help and usage
 -H  render HTML instead of plain text
+-F  show only failures
 -v  show version
 ```
 
 With no file arguments, `dbglog` reads from standard input.
 
-Plain text mode takes raw `dbg` logs and rewrites them into grouped file sections. It prints:
+### Plain Text Mode
 
-- `FILE:` headers when the source file changes
-- line-numbered records for source-tagged diagnostics
-- indented non-source lines such as `VRB]:`, `CLK]:`, and test summaries
-- `TST]: failed / checks failed` summaries for each `dbgtst`
-- per-file `RSLT: failed_checks / total_checks failed` summaries
-
-Example:
+The default mode produces a human-readable report. Event codes are expanded to uniform-width markers (`ERROR:`, `WARN :`, `INFO :`, `TEST [`, `PASS :`, `FAIL :`, `MEM  :`, etc.). Source file and line are appended directly after each event.
 
 ```sh
 ./src/dbglog test/test.log
 ./program 2>&1 | ./src/dbglog
 ```
 
-HTML mode renders the same information as a single static page with one collapsible card per file, navigation links, and color-coded lines:
+Example output:
+
+```text
+ERROR: something went wrong test.c:42
+TEST [ test case 1 test.c:50
+PASS : x == 1 test.c:51
+FAIL : y == 2 test.c:52
+FAIL = failure detail here
+TEST ]
+```
+
+### Failure-Only Mode (`-F`)
+
+Shows only failures: `ERROR:` lines, `FAIL :` checks, `FAIL =` detail lines, and `FAIL` memory-check results. PASS lines, info, warnings, verbatim output, and clock markers are suppressed.
+
+```sh
+./src/dbglog -F test/test.log
+```
+
+### HTML Mode (`-H`)
+
+Renders a single static HTML page with color-coded lines:
+
+- Green — passing checks and memory validations
+- Red — failures and errors
+- Yellow — warnings
+- Blue — informational diagnostics
+- Purple — test and track blocks
+- Light blue — clock and memory allocation events
+- Green-tinted — verbatim program output
 
 ```sh
 ./src/dbglog -H test/test.log > report.html
 ```
 
-In HTML mode, file cards start collapsed by default.
+### Memory Validation
 
-`dbglog -H` accepts either raw `dbg` logs or already transformed `dbglog` text. It detects transformed input when the first non-empty line starts with `FILE:`. Otherwise it first applies the normal text transformation and then renders the HTML page.
+When allocation tracing is enabled (`DEBUG_ALLOC`), `dbglog` tracks every `M:` allocation event (malloc, calloc, realloc, free, strdup, strndup) and validates every `M?` boundary-check event against the known allocation table. Each `M?` line is followed by a `PASS` or `FAIL` result with the available buffer size.
 
-This means both of these forms work:
+```text
+MEM  : malloc 32 A1B2C3D4 test.c:10
+MEM  ? strcpy A1B2C3D4 ... 5 test.c:11
+PASS strcpy 0xA1B2C3D4 +5 (buf=32) test.c:11
+MEM  : free A1B2C3D4 test.c:13
+MEM  ? pointer A1B2C3D4 test.c:14
+FAIL pointer 0xA1B2C3D4 test.c:14
+```
 
-```sh
-./src/dbglog -H test/test.log > raw-report.html
-./src/dbglog test/test.log | ./src/dbglog -H > text-report.html
+Violations detected include use-after-free, buffer overflow, out-of-bounds pointers, and non-heap addresses.
+
+### Track Validation
+
+`dbglog` evaluates `dbgtrk` expectations. It parses the `=` and `!` strings from the `TRACK[` marker, scans all log lines between `TRACK[` and `TRACK]`, and reports `PASS :` or `FAIL :` for each expectation. The source location is taken from the enclosing `TEST [` block.
+
+```text
+TEST [ allocation pattern test.c:20
+TRACK[ "=alloc(16)", "!alloc(0)" test.c:21
+INFO : alloc(16) test.c:22
+TRACK]
+PASS : (=alloc(16)) test.c:20
+PASS : (!alloc(0)) test.c:20
+TEST ]
 ```
 
 ## Release Builds And Source Hygiene
