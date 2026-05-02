@@ -4,33 +4,30 @@
 
 # Active Task
 
-Embedded-simplification refactor of `dbg.h`: replace human-readable text prefixes with single-byte codes, emit raw values as 16-char hex strings, defer all formatting to `dbglog`. Planned but not started.
+Phase 1 complete. dbglog rewritten. Phase 2 on hold.
 
 # Last Stop
 
-Specification agreed:
-- Event codes: `E`/`W`/`I`/`P`/`F`/`T`/`t`/`K`/`k`/`V`/`v`/`C`/`c`/`N`/`D`
-- Format string emitted null-terminated, not printf-expanded
-- Numeric args: 16-char uppercase hex
-- `%s` args: null-terminated string content
-- Source location: `\x0F <file>\0 <line-ascii>\n`
-- `double` via union cast to uint64
-- `DEBUG_ALLOC` excluded from this pass
-- Implementation not yet started; no source files touched
+Session checkpoint. All work unstaged.
+
+- `src/dbg.h` — Phase 1 event codes, dbg_millis, simplified dbgclk, M:/M? format
+- `src/dbglog.c` — complete rewrite, single code path for text/HTML, zero warnings
+- `test/t_alloc_fail.c` — new test, 9 intentional M? failures
+- dbglog: uniform 6-char markers, M? allocation tracking, dbgtrk with T[ source
 
 # Open Questions
 
-1. Should dbglog support both old and new formats during transition?
+1. Should -F affect HTML mode too? (currently HTML always shows full report)
 2. What does `DBG_PUTC` default to when `<stdio.h>` is not included?
 
 # Last Decision
 
-Agreed on 16-char hex encoding for all numeric args — avoids ABI assumptions in dbglog.
+dbglog unified text/HTML into single process_line. Event codes expanded to 6-char uniform width. Memory events: neutral color (same as clock).
 
 # Pointers
 
-- `PLAN.md` — embedded refactor milestones and tasks
-- `docs/manual.md` — user documentation (will need updating)
-- `src/dbg.h` — main header to refactor
-- `src/dbglog.c` — log formatter to rewrite
-- `test/` — test suite (will need updates)
+- `PLAN.md` — status and milestones
+- `journal/2026-05-02-embedded-refactor.md` — session record
+- `src/dbg.h` — Phase 1 changes (unstaged)
+- `src/dbglog.c` — complete rewrite (unstaged)
+- `test/t_alloc_fail.c` — new test (unstaged)

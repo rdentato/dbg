@@ -1,556 +1,579 @@
 /*
 ** dbglog: readable formatter for dbg.h logs.
+** Parses single-byte event codes. Validates M? checks. Evaluates dbgtrk.
 */
 
+#define _POSIX_C_SOURCE 200809L
+
 #include <ctype.h>
+#include <inttypes.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define DBGLOG_VERSION "dbglog 0.1"
-#define MAX_LINE 8192
+#define DBGLOG_VERSION "dbglog 2.0"
+#define MAX_LINE        8192
+#define MAX_ALLOCS      4096
+#define MAX_TRK_EXPECTS 8
+
+/* ----------------------------------------------------------------
+ * allocation tracking
+ * ---------------------------------------------------------------- */
 
 typedef struct {
-  int has_location;
-  int line;
-  char file[512];
-} source_t;
+  uintptr_t ptr;
+  size_t    size;
+} alloc_t;
 
-typedef struct {
-  char **items;
-  int count;
-  int cap;
-} line_list_t;
+static alloc_t allocs[MAX_ALLOCS];
+static int     alloc_count;
 
-#define TRK_BUF_SIZE    256
+static int  html_mode;
+static int  fail_only;
+static int  in_verbatim;
+static int  in_trk;
 
-static unsigned char trkbuf[TRK_BUF_SIZE];
-
-typedef struct {
-  char *name;
-  char *summary;
-  line_list_t lines;
-} file_block_t;
-
-typedef struct {
-  file_block_t *items;
-  int count;
-  int cap;
-} file_list_t;
-
-static int in_test = 0;
-static int test_checks = 0;
-static int test_failed_checks = 0;
-static int file_checks = 0;
-static int file_failed_checks = 0;
-static char current_file[512] = "";
-
-static int capture_output = 0;
-static line_list_t *captured_lines = NULL;
-
-static int in_trk = 0;
-
-static void *xrealloc(void *ptr, size_t size)
+static void alloc_add(uintptr_t ptr, size_t size)
 {
-  void *new_ptr = realloc(ptr, size);
-
-  if (new_ptr == NULL) {
-    fputs("dbglog: out of memory\n", stderr);
-    exit(3);
-  }
-
-  return new_ptr;
+  if (ptr == 0 || alloc_count >= MAX_ALLOCS) return;
+  allocs[alloc_count].ptr  = ptr;
+  allocs[alloc_count].size = size;
+  alloc_count++;
 }
 
-static char *xstrdup(const char *s)
+static void alloc_free(uintptr_t ptr)
 {
-  size_t len = strlen(s) + 1;
-  char *copy = xrealloc(NULL, len);
-
-  memcpy(copy, s, len);
-  return copy;
-}
-
-static void lines_push(line_list_t *lines, const char *text)
-{
-  if (lines->count == lines->cap) {
-    lines->cap = lines->cap ? lines->cap * 2 : 16;
-    lines->items = xrealloc(lines->items, sizeof(lines->items[0]) * (size_t)lines->cap);
-  }
-
-  lines->items[lines->count++] = xstrdup(text);
-}
-
-static void trim_newline(char *s)
-{
-  size_t len = strlen(s);
-
-  while (len > 0 && (s[len - 1] == '\n' || s[len - 1] == '\r')) {
-    s[--len] = '\0';
+  int i;
+  for (i = 0; i < alloc_count; i++) {
+    if (allocs[i].ptr == ptr) {
+      allocs[i] = allocs[--alloc_count];
+      return;
+    }
   }
 }
 
-static void trim_right(char *s)
+static int alloc_find(uintptr_t ptr, size_t *size)
 {
-  size_t len = strlen(s);
-
-  while (len > 0 && (s[len - 1] == ' ' || s[len - 1] == '\t')) {
-    s[--len] = '\0';
+  int i;
+  for (i = 0; i < alloc_count; i++) {
+    if (ptr >= allocs[i].ptr && ptr < allocs[i].ptr + allocs[i].size) {
+      if (size) *size = allocs[i].size - (size_t)(ptr - allocs[i].ptr);
+      return 1;
+    }
   }
+  return 0;
 }
 
-static const char *skip_spaces(const char *s)
-{
-  while (*s == ' ' || *s == '\t') s++;
-  return s;
-}
+/* ----------------------------------------------------------------
+ * track expectations
+ * ---------------------------------------------------------------- */
 
-static const char *skip_line_number(const char *s)
-{
-  const char *p = skip_spaces(s);
+typedef struct {
+  char expect[256];
+  int  must;       /* 1 for =, 0 for ! */
+  int  found;
+} trk_expect_t;
 
-  while (isdigit((unsigned char)*p)) p++;
-  if (p > s && *p == ' ') return skip_spaces(p);
-  return p == s ? p : skip_spaces(s);
-}
+static trk_expect_t trk_expects[MAX_TRK_EXPECTS];
+static int          trk_expect_count;
 
-static int starts_with(const char *s, const char *prefix)
+/* forward decls — output helpers defined later */
+static void out_fmt(const char *cls, const char *fmt, ...)
+     __attribute__((format(printf,2,3)));
+static void out_line(const char *cls, const char *line);
+
+static char trk_tst_file[512];
+static int  trk_tst_line;
+
+static void trk_set_tst(const char *file, int lnum)
 {
-  return strncmp(s, prefix, strlen(prefix)) == 0;
+  if (file && file[0]) {
+    snprintf(trk_tst_file, sizeof(trk_tst_file), "%s", file);
+    trk_tst_line = lnum;
+  }
 }
 
 static void trk_reset(void)
 {
-  memset(trkbuf, 0, 8);
+  trk_expect_count = 0;
+  memset(trk_expects, 0, sizeof(trk_expects));
 }
 
-static void check_trk_expectations(void);
-static void emit_line(const char *fmt, ...);
-static void count_check(int failed);
-
-static void trk_scan_line(const char *line)
+static void trk_open(const char *msg)
 {
-  int i;
-
-  for (i = 0; i < 8; i++) {
-    unsigned int off = trkbuf[i];
-
-    if (off == 0) continue;
-    if (trkbuf[off] & 0x80) continue;
-    if (strstr(line, (const char *)(trkbuf + off + 1)))
-      trkbuf[off] |= 0x80;
-  }
-}
-
-static int parse_trk_expects(const char *line)
-{
-  const char *p = skip_spaces(line + 5); /* skip "TRK[:" */
-  int n = 0;
-  unsigned int pos = 8;
+  const char *p = strchr(msg, '[');
+  const char *q;
 
   trk_reset();
+  in_trk = 1;
+  if (!p) return;
+  p++;
 
-  while (*p) {
+  while (*p && trk_expect_count < MAX_TRK_EXPECTS) {
     while (*p == ' ' || *p == '\t' || *p == ',') p++;
-    if (*p == '\0') break;
+    if (*p != '"') break;
+    p++;
+    if (*p != '=' && *p != '!') break;
 
-    if (*p != '"') return 0;
+    trk_expect_t *e = &trk_expects[trk_expect_count];
+    e->must  = (*p == '=');
+    e->found = 0;
     p++;
 
-    if (*p != '=' && *p != '!') return 0;
-
-    const char *start = p++;  /* points to prefix, then advance */
-    const char *end = strchr(p, '"');
-    if (!end) return 0;
-
-    size_t len = (size_t)(end - start);  /* includes prefix */
-
-    if (n >= 8) {
-      emit_line("      FAIL: (trk: too many expectations)");
-      count_check(1);
-      return 0;
+    q = strchr(p, '"');
+    if (!q) break;
+    {
+      size_t len = (size_t)(q - p) + 1;
+      if (len >= sizeof(e->expect)) len = sizeof(e->expect) - 1;
+      e->expect[0] = e->must ? '=' : '!';
+      memcpy(e->expect + 1, p, len - 1);
+      e->expect[len] = '\0';
     }
-
-    if (pos + 1 + len > TRK_BUF_SIZE) {
-      emit_line("      FAIL: (trk: buffer overflow)");
-      count_check(1);
-      return 0;
-    }
-
-    trkbuf[n] = (unsigned char)pos;
-    memcpy(trkbuf + pos, start, len);
-    trkbuf[pos + len] = '\0';
-
-    pos += 1 + (unsigned int)len;
-    n++;
-    p = end + 1;
+    p = q + 1;
+    trk_expect_count++;
   }
-
-  return 1;
 }
 
-static void emit_line(const char *fmt, ...)
+static void trk_scan_line(const char *msg)
 {
-  char line[MAX_LINE + 64];
-  va_list ap;
-
-  va_start(ap, fmt);
-  vsnprintf(line, sizeof(line), fmt, ap);
-  va_end(ap);
-
-  if (capture_output) {
-    lines_push(captured_lines, line);
-  }
-  else {
-    printf("%s\n", line);
+  int i;
+  for (i = 0; i < trk_expect_count; i++) {
+    if (!trk_expects[i].found)
+      if (strstr(msg, trk_expects[i].expect + 1))
+        trk_expects[i].found = 1;
   }
 }
 
-static int parse_location(const char *s, source_t *source)
-{
-  const char *colon = strrchr(s, ':');
-  char *end;
-  long line;
-  size_t file_len;
-
-  if (colon == NULL || colon == s || !isdigit((unsigned char)colon[1])) return 0;
-
-  line = strtol(colon + 1, &end, 10);
-  if (*end != '\0' || line <= 0) return 0;
-
-  file_len = (size_t)(colon - s);
-  if (file_len >= sizeof(source->file)) file_len = sizeof(source->file) - 1;
-
-  memcpy(source->file, s, file_len);
-  source->file[file_len] = '\0';
-  source->line = (int)line;
-  source->has_location = 1;
-  return 1;
-}
-
-static void split_source(char *line, source_t *source)
-{
-  char *sep;
-  char *space;
-
-  source->has_location = 0;
-  source->line = 0;
-  source->file[0] = '\0';
-
-  sep = strchr(line, '\x0f');
-  if (sep != NULL) {
-    *sep++ = '\0';
-    trim_right(line);
-    parse_location(sep, source);
-    return;
-  }
-
-  /* Accept pasted logs where the non-printing separator was lost. */
-  space = strrchr(line, ' ');
-  if (space != NULL && parse_location(space + 1, source)) {
-    *space = '\0';
-    trim_right(line);
-  }
-}
-
-static void finish_file(void)
-{
-  if (current_file[0] != '\0') {
-    emit_line("      RSLT: %d / %d failed", file_failed_checks, file_checks);
-  }
-}
-
-static void reset_formatter(void)
-{
-  in_test = 0;
-  test_checks = 0;
-  test_failed_checks = 0;
-  file_checks = 0;
-  file_failed_checks = 0;
-  current_file[0] = '\0';
-
-  if (in_trk) {
-    trk_reset();
-    in_trk = 0;
-  }
-}
-
-static void switch_file(source_t *source)
-{
-  if (!source->has_location) return;
-  if (!strcmp(current_file, source->file)) return;
-
-  finish_file();
-  snprintf(current_file, sizeof(current_file), "%s", source->file);
-  file_checks = 0;
-  file_failed_checks = 0;
-  emit_line("      FILE: %s", current_file);
-}
-
-static void open_test(void)
-{
-  if (in_test) {
-    fputs("dbglog: nested TST markers are no longer supported\n", stderr);
-    emit_line("      TST]: %d / %d failed", test_failed_checks, test_checks);
-  }
-
-  test_checks = 0;
-  test_failed_checks = 0;
-  in_test = 1;
-}
-
-static void close_test(void)
-{
-  if (!in_test) {
-    emit_line("      TST]: 0 / 0 failed");
-    return;
-  }
-
-  emit_line("      TST]: %d / %d failed", test_failed_checks, test_checks);
-  in_test = 0;
-}
-
-static void count_check(int failed)
-{
-  if (!in_test) return;
-
-  test_checks++;
-  file_checks++;
-  if (failed) {
-    test_failed_checks++;
-    file_failed_checks++;
-  }
-}
-
-static void check_trk_expectations(void)
+static void trk_close(void)
 {
   int i;
 
-  for (i = 0; i < 8; i++) {
-    unsigned int off = trkbuf[i];
+  if (!in_trk) return;
+  in_trk = 0;
 
-    if (off == 0) continue;
-
-    unsigned char c = trkbuf[off];
-    int failed = (c == (0x80 | '!')) || (c == '=');
-
-    if (failed)
-      emit_line("      FAIL: (%c%s)",
-                c & 0x7F, (const char *)(trkbuf + off + 1));
-    else
-      emit_line("      PASS: (%c%s)",
-                c & 0x7F, (const char *)(trkbuf + off + 1));
-
-    count_check(failed);
-  }
-}
-
-static void process_raw_line(char *line)
-{
-  source_t source;
-
-  trim_newline(line);
-  split_source(line, &source);
-
-  /* --- TRK]: close tracking before emitting the marker ---------- */
-  if (!strncmp(line, "TRK]:", 5)) {
-    if (in_trk) {
-      check_trk_expectations();
-      trk_reset();
-      in_trk = 0;
+  for (i = 0; i < trk_expect_count; i++) {
+    trk_expect_t *e = &trk_expects[i];
+    int failed = (e->must && !e->found) || (!e->must && e->found);
+    const char *cls = failed ? "fail" : "pass";
+    if (trk_tst_file[0]) {
+      if (failed || !fail_only || html_mode)
+        out_fmt(cls, "%-5s: (%s) %s:%d",
+                failed ? "FAIL" : "PASS", e->expect,
+                trk_tst_file, trk_tst_line);
+    } else {
+      if (failed || !fail_only || html_mode)
+        out_fmt(cls, "%-5s: (%s)",
+                failed ? "FAIL" : "PASS", e->expect);
     }
-    emit_line("      TRK]:");
-    return;
   }
-
-  /* --- scan each line inside an open TRK block ------------------ */
-  if (in_trk)
-    trk_scan_line(line);
-
-  /* --- emit the line -------------------------------------------- */
-  if (source.has_location) {
-    switch_file(&source);
-    emit_line("%5d %s", source.line, line);
-  }
-  else if (!strncmp(line, "TST]:", 5)) {
-    close_test();
-  }
-  else {
-    emit_line("      %s", line);
-  }
-
-  /* --- open markers --------------------------------------------- */
-  if (!strncmp(line, "TST[:", 5)) {
-    open_test();
-  }
-  else if (!strncmp(line, "TRK[:", 5)) {
-    if (in_trk) {
-      check_trk_expectations();
-      trk_reset();
-    }
-    in_trk = (parse_trk_expects(line) != 0);
-  }
-  else if (!strncmp(line, "PASS:", 5)) {
-    count_check(0);
-  }
-  else if (!strncmp(line, "FAIL:", 5)) {
-    count_check(1);
-  }
+  trk_reset();
 }
 
-static int process_stream(FILE *fp, const char *name)
+/* ----------------------------------------------------------------
+ * token helpers
+ * ---------------------------------------------------------------- */
+
+static int has_prefix(const char *s, const char *p)
+{ return strncmp(s, p, strlen(p)) == 0; }
+
+static int is_hex_token(const char *s)
 {
-  char line[MAX_LINE];
-
-  while (fgets(line, sizeof(line), fp) != NULL) {
-    process_raw_line(line);
-  }
-
-  if (ferror(fp)) {
-    fprintf(stderr, "dbglog: error reading %s\n", name);
-    return 0;
-  }
-
-  return 1;
-}
-
-static int read_stream_lines(FILE *fp, const char *name, line_list_t *lines)
-{
-  char line[MAX_LINE];
-
-  while (fgets(line, sizeof(line), fp) != NULL) {
-    trim_newline(line);
-    lines_push(lines, line);
-  }
-
-  if (ferror(fp)) {
-    fprintf(stderr, "dbglog: error reading %s\n", name);
-    return 0;
-  }
-
-  return 1;
-}
-
-static int is_transformed_lines(line_list_t *lines)
-{
-  int i;
-
-  for (i = 0; i < lines->count; i++) {
-    const char *line = skip_spaces(lines->items[i]);
-
-    if (line[0] == '\0') continue;
-    return starts_with(line, "FILE:");
-  }
-
+  for (; *s; s++)
+    if (isxdigit((unsigned char)*s) &&
+        (*s >= 'A' || *s >= 'a'))
+      return 1;
   return 0;
 }
 
-static void format_raw_lines(line_list_t *raw, line_list_t *out)
+static uintptr_t parse_token(const char *s)
 {
-  int i;
-
-  capture_output = 1;
-  captured_lines = out;
-  reset_formatter();
-
-  for (i = 0; i < raw->count; i++) {
-    char line[MAX_LINE];
-
-    snprintf(line, sizeof(line), "%s", raw->items[i]);
-    process_raw_line(line);
-  }
-
-  finish_file();
-  capture_output = 0;
-  captured_lines = NULL;
+  return (uintptr_t)strtoull(s, NULL, is_hex_token(s) ? 16 : 10);
 }
 
-static file_block_t *files_add(file_list_t *files, const char *name)
+static int tokenize(char *msg, char *tok[], int max)
 {
-  file_block_t *file;
+  int   nt = 0;
+  char *p  = msg;
 
-  if (files->count == files->cap) {
-    files->cap = files->cap ? files->cap * 2 : 8;
-    files->items = xrealloc(files->items, sizeof(files->items[0]) * (size_t)files->cap);
+  while (nt < max) {
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p == '\0') break;
+    tok[nt++] = p;
+    while (*p && *p != ' ' && *p != '\t') p++;
+    if (*p) { *p = '\0'; p++; }
   }
-
-  file = &files->items[files->count++];
-  file->name = xstrdup(name);
-  file->summary = NULL;
-  file->lines.items = NULL;
-  file->lines.count = 0;
-  file->lines.cap = 0;
-  return file;
+  return nt;
 }
 
-static void parse_transformed(line_list_t *lines, file_list_t *files)
+/* ----------------------------------------------------------------
+ * M: allocation tracking
+ * ---------------------------------------------------------------- */
+
+static void handle_M_colon(char *msg)
 {
-  file_block_t *current = NULL;
-  int i;
+  char *t[8];
+  int   nt;
 
-  for (i = 0; i < lines->count; i++) {
-    const char *trimmed = skip_spaces(lines->items[i]);
+  if (has_prefix(msg, "M:")) msg += 2;
+  nt = tokenize(msg, t, 8);
+  if (nt < 1) return;
 
-    if (starts_with(trimmed, "FILE:")) {
-      current = files_add(files, skip_spaces(trimmed + 5));
-      continue;
+  if (!strcmp(t[0], "malloc") && nt >= 3)
+    alloc_add(parse_token(t[2]), (size_t)parse_token(t[1]));
+  else if (!strcmp(t[0], "free") && nt >= 2)
+    alloc_free(parse_token(t[1]));
+  else if (!strcmp(t[0], "calloc") && nt >= 4)
+    alloc_add(parse_token(t[3]),
+              (size_t)(parse_token(t[1]) * parse_token(t[2])));
+  else if (!strcmp(t[0], "realloc") && nt >= 4) {
+    uintptr_t old = parse_token(t[1]);
+    if (old) alloc_free(old);
+    { uintptr_t nw = parse_token(t[3]);
+      if (nw) alloc_add(nw, (size_t)parse_token(t[2])); }
+  } else if (!strcmp(t[0], "strdup") && nt >= 4)
+    alloc_add(parse_token(t[3]), (size_t)parse_token(t[2]));
+  else if (!strcmp(t[0], "strndup") && nt >= 4)
+    alloc_add(parse_token(t[3]), (size_t)parse_token(t[2]));
+}
+
+/* ----------------------------------------------------------------
+ * M? boundary checking
+ * ---------------------------------------------------------------- */
+
+/* Returns 1 on PASS, 0 on FAIL. Writes result line to *out. */
+static int check_M_question(char *msg, char *out, size_t osize)
+{
+  char     *t[6];
+  int       nt;
+  uintptr_t p1 = 0;
+  size_t    sz = 0, avail = 0;
+  int       ok = 1;
+
+  *out = '\0';
+  if (has_prefix(msg, "M?")) msg += 2;
+  nt = tokenize(msg, t, 6);
+  if (nt < 2) { snprintf(out, osize, "????"); return 0; }
+
+  if (!strcmp(t[0], "pointer")) {
+    p1 = parse_token(t[1]);
+    ok = (p1 == 0) || alloc_find(p1, NULL);
+    snprintf(out, osize, "%-5spointer 0x%zX",
+             ok ? "PASS" : "FAIL", (size_t)p1);
+  } else if (!strcmp(t[0], "memset")) {
+    p1 = parse_token(t[1]);
+    sz = (size_t)parse_token(t[2]);
+    ok = alloc_find(p1, &avail);
+    ok = ok && (sz <= avail);
+    snprintf(out, osize, "%-5smemset 0x%zX +%zu (buf=%zu)",
+             ok ? "PASS" : "FAIL", (size_t)p1, sz, avail);
+  } else if (nt >= 4) {
+    p1 = parse_token(t[1]);
+    sz = (size_t)parse_token(t[3]);
+    ok = alloc_find(p1, &avail);
+    if (ok && sz > avail) ok = 0;
+    snprintf(out, osize, "%-5s%s 0x%zX +%zu (buf=%zu)",
+             ok ? "PASS" : "FAIL", t[0], (size_t)p1, sz, avail);
+  }
+  return ok;
+}
+
+/* ----------------------------------------------------------------
+ * source location extraction
+ * ---------------------------------------------------------------- */
+
+static int parse_source(const char *s, char *file, size_t fsize, int *line)
+{
+  const char *colon = strrchr(s, ':');
+  char *end;
+  long  lnum;
+  size_t flen;
+
+  *line = 0;
+  file[0] = '\0';
+  if (!colon || colon == s || !isdigit((unsigned char)colon[1])) return 0;
+
+  lnum = strtol(colon + 1, &end, 10);
+  if (*end || lnum < 0) return 0;
+
+  flen = (size_t)(colon - s);
+  if (flen >= fsize) flen = fsize - 1;
+  memcpy(file, s, flen);
+  file[flen] = '\0';
+  *line = (int)lnum;
+  return 1;
+}
+
+static void split_line(const char *raw, char *msg, size_t msize,
+                       char *file, size_t fsize, int *line)
+{
+  const char *sep = strrchr(raw, '\x0F');
+
+  *line = 0;
+  file[0] = '\0';
+  if (sep) {
+    size_t mlen = (size_t)(sep - raw);
+    if (mlen >= msize) mlen = msize - 1;
+    memcpy(msg, raw, mlen);
+    msg[mlen] = '\0';
+    parse_source(sep + 1, file, fsize, line);
+  } else {
+    size_t mlen = strlen(raw);
+    if (mlen >= msize) mlen = msize - 1;
+    memcpy(msg, raw, mlen);
+    msg[mlen] = '\0';
+  }
+}
+
+/* ----------------------------------------------------------------
+ * event-code expansion — all markers padded to 6 chars
+ * ---------------------------------------------------------------- */
+
+static const char *expand_code(char c)
+{
+  switch (c) {
+  case 'E': return "ERROR";
+  case 'W': return "WARN";
+  case 'I': return "INFO";
+  case 'P': return "PASS";
+  case 'F': return "FAIL";
+  case 'T': return "TEST";
+  case 'K': return "TRACK";
+  case 'V': return "VERB";
+  case 'C': return "CLOCK";
+  case 'M': return "MEM";
+  default: return NULL;
+  }
+}
+
+/* Rewrite msg prefix: "E:text" → "ERROR:text" (6-char marker).
+   Returns 1 if prefix was expanded, 0 if left unchanged.           */
+static int expand_prefix(char *msg, size_t msize)
+{
+  char buf[MAX_LINE];
+  const char *word;
+  char delim;
+  const char *rest;
+  if (msg[0] && msg[1] && msg[2] && msg[0] == 'F' && msg[1] == '=') {
+    word = "FAIL";
+    delim = '=';
+    rest = msg + 2;
+  } else if (msg[0] && msg[1]) {
+    word = expand_code(msg[0]);
+    if (!word) return 0;
+    delim = msg[1];
+    rest = msg + 2;
+  } else {
+    return 0;
+  }
+
+  /* pad word to 5 chars, then delimiter, then rest */
+  if (rest && rest[0])
+    snprintf(buf, sizeof(buf), "%-5s%c %s", word, delim, rest);
+  else
+    snprintf(buf, sizeof(buf), "%-5s%c", word, delim);
+  snprintf(msg, msize, "%s", buf);
+  return 1;
+}
+
+/* ----------------------------------------------------------------
+ * output helpers — dispatch to stdout or HTML line list
+ * ---------------------------------------------------------------- */
+
+typedef struct {
+  char  *text;
+  char   cls[16];
+} out_line_t;
+
+static out_line_t *out_lines;
+static int         out_count;
+static int         out_cap;
+
+static void html_push(const char *text, const char *cls)
+{
+  if (out_count == out_cap) {
+    out_cap = out_cap ? out_cap * 2 : 128;
+    out_lines = realloc(out_lines, (size_t)out_cap * sizeof(*out_lines));
+    if (!out_lines) { fputs("dbglog: out of memory\n", stderr); exit(3); }
+  }
+  out_lines[out_count].text = strdup(text ? text : "");
+  snprintf(out_lines[out_count].cls, sizeof(out_lines[out_count].cls),
+           "%s", cls ? cls : "");
+  out_count++;
+}
+
+static void out_line(const char *cls, const char *line)
+{
+  if (html_mode)
+    html_push(line, cls);
+  else
+    puts(line);
+}
+
+static void out_fmt(const char *cls, const char *fmt, ...)
+     __attribute__((format(printf,2,3)));
+
+static void out_fmt(const char *cls, const char *fmt, ...)
+{
+  char buf[MAX_LINE + 1024];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  if (html_mode)
+    html_push(buf, cls);
+  else
+    puts(buf);
+}
+
+static void emit_line(const char *msg, const char *file, int lnum, const char *cls)
+{
+  char expanded[MAX_LINE];
+  snprintf(expanded, sizeof(expanded), "%s", msg);
+  expand_prefix(expanded, sizeof(expanded));
+  if (file[0])
+    out_fmt(cls, "%s %s:%d", expanded, file, lnum);
+  else
+    out_fmt(cls, "%s", expanded);
+}
+
+static void emit_fail(const char *msg, const char *file, int lnum)
+{
+  emit_line(msg, file, lnum, "fail");
+}
+
+static void emit_ok(const char *msg, const char *file, int lnum, const char *cls)
+{
+  if (!html_mode && fail_only) return;
+  emit_line(msg, file, lnum, cls);
+}
+
+/* ----------------------------------------------------------------
+ * line processing — single code path for text and HTML
+ * ---------------------------------------------------------------- */
+
+static void process_line(const char *raw)
+{
+  char msg[MAX_LINE];
+  char file[512];
+  int  lnum;
+  char tmp[MAX_LINE];
+  size_t rlen = strlen(raw);
+
+  while (rlen > 0 && (raw[rlen-1] == '\n' || raw[rlen-1] == '\r')) rlen--;
+  memcpy(tmp, raw, rlen);
+  tmp[rlen] = '\0';
+
+  split_line(tmp, msg, sizeof(msg), file, sizeof(file), &lnum);
+
+  /* --- verbatim close ------------------------------------------- */
+  if (strstr(tmp, "V]\x0E") || has_prefix(msg, "V]\x0E")) {
+    in_verbatim = 0;
+    emit_ok("V]", file, lnum, "verbatim");
+    return;
+  }
+
+  /* --- inside verbatim block ------------------------------------ */
+  if (in_verbatim) {
+    if (!fail_only || html_mode) out_line("verbatim", tmp);
+    return;
+  }
+
+  /* --- track block ---------------------------------------------- */
+  if (in_trk) {
+    if (has_prefix(msg, "K]")) {
+      trk_close();
+      emit_ok("K]", file, lnum, "trk");
+      return;
     }
-
-    if (current == NULL) current = files_add(files, "log");
-
-    lines_push(&current->lines, lines->items[i]);
-    if (starts_with(trimmed, "RSLT:")) {
-      if (current->summary != NULL) free(current->summary);
-      current->summary = xstrdup(trimmed);
-    }
+    trk_scan_line(msg);
+    return;
   }
+
+  /* --- M: alloc ------------------------------------------------- */
+  if (has_prefix(msg, "M:")) {
+    char saved[MAX_LINE];
+    snprintf(saved, sizeof(saved), "%s", msg);
+    handle_M_colon(msg);
+    emit_ok(saved, file, lnum, "memory");
+    return;
+  }
+
+  /* --- M? check ------------------------------------------------- */
+  if (has_prefix(msg, "M?")) {
+    char saved[MAX_LINE];
+    char result[512];
+    int  ok;
+    snprintf(saved, sizeof(saved), "%s", msg);
+    ok = check_M_question(msg, result, sizeof(result));
+    if (!fail_only || html_mode || !ok) {
+      expand_prefix(saved, sizeof(saved));
+      out_fmt(ok ? "pass" : "fail", "%s %s:%d",
+              saved, file[0] ? file : "", lnum);
+      if (file[0])
+        out_fmt(ok ? "pass" : "fail", "%s %s:%d", result, file, lnum);
+      else
+        out_line(ok ? "pass" : "fail", result);
+    }
+    return;
+  }
+
+  /* --- check pass/fail ----------------------------------------- */
+  if (has_prefix(msg, "P:")) { emit_ok(msg, file, lnum, "pass"); return; }
+  if (has_prefix(msg, "F:") && !has_prefix(msg, "F="))
+    { emit_fail(msg, file, lnum); return; }
+  if (has_prefix(msg, "F=")) { emit_fail(msg, file, lnum); return; }
+
+  /* --- track open ---------------------------------------------- */
+  if (has_prefix(msg, "K[")) {
+    trk_open(msg);
+    emit_ok(msg, file, lnum, "trk");
+    return;
+  }
+
+  /* --- test blocks --------------------------------------------- */
+  if (has_prefix(msg, "T["))
+    { trk_set_tst(file, lnum); emit_ok(msg, file, lnum, "test"); return; }
+  if (has_prefix(msg, "T]")) { emit_ok(msg, file, lnum, "test"); return; }
+
+  /* --- verbatim open ------------------------------------------- */
+  if (has_prefix(msg, "V["))
+    { in_verbatim = 1; emit_ok(msg, file, lnum, "verbatim"); return; }
+
+  /* --- clock --------------------------------------------------- */
+  if (has_prefix(msg, "C[")) { emit_ok(msg, file, lnum, "clock"); return; }
+  if (has_prefix(msg, "C]")) { emit_ok(msg, file, lnum, "clock"); return; }
+
+  /* --- diagnostics --------------------------------------------- */
+  if (has_prefix(msg, "E:")) { emit_fail(msg, file, lnum); return; }
+  if (has_prefix(msg, "W:")) { emit_ok(msg, file, lnum, "warn"); return; }
+  if (has_prefix(msg, "I:")) { emit_ok(msg, file, lnum, "info"); return; }
+
+  /* --- fallback ------------------------------------------------ */
+  emit_ok(msg, file, lnum, "plain");
 }
 
-static void html_escape(FILE *fp, const char *s)
+/* ----------------------------------------------------------------
+ * HTML rendering
+ * ---------------------------------------------------------------- */
+
+static void html_esc(const char *s)
 {
-  for (; *s != '\0'; s++) {
+  for (; *s; s++) {
     switch (*s) {
-    case '&': fputs("&amp;", fp); break;
-    case '<': fputs("&lt;", fp); break;
-    case '>': fputs("&gt;", fp); break;
-    case '"': fputs("&quot;", fp); break;
-    default: fputc(*s, fp); break;
+    case '&': fputs("&amp;",  stdout); break;
+    case '<': fputs("&lt;",   stdout); break;
+    case '>': fputs("&gt;",   stdout); break;
+    case '"': fputs("&quot;", stdout); break;
+    default:  putchar(*s); break;
     }
   }
 }
 
-static const char *line_class(const char *line)
+static void render_html(void)
 {
-  const char *trimmed = skip_line_number(line);
-
-  if (starts_with(trimmed, "FAIL:")) return "fail";
-  if (starts_with(trimmed, "PASS:")) return "pass";
-  if (starts_with(trimmed, "EROR:")) return "error";
-  if (starts_with(trimmed, "WARN:")) return "warn";
-  if (starts_with(trimmed, "INFO:")) return "info";
-  if (starts_with(trimmed, "TST[:") || starts_with(trimmed, "TST]:")) return "test";
-  if (starts_with(trimmed, "CLK[:") || starts_with(trimmed, "CLK]:")) return "clock";
-  if (starts_with(trimmed, "VRB[:") || starts_with(trimmed, "VRB]:")) return "verbose";
-  if (starts_with(trimmed, "MTRK:") || starts_with(trimmed, "MCHK:")) return "memory";
-  if (starts_with(trimmed, "RSLT:")) return starts_with(trimmed, "RSLT: 0 /") ? "pass" : "fail";
-  if (starts_with(trimmed, "TRK[:") || starts_with(trimmed, "TRK]:")) return "trk";
-  if (starts_with(trimmed, "`")) return "detail";
-  return "plain";
-}
-
-static const char *file_class(file_block_t *file)
-{
-  if (file->summary == NULL) return "plain";
-  return starts_with(file->summary, "RSLT: 0 /") ? "pass" : "fail";
-}
-
-static void render_html(line_list_t *lines)
-{
-  file_list_t files = {0};
-  int i, j;
-
-  parse_transformed(lines, &files);
+  int i;
 
   puts("<!doctype html>");
   puts("<html lang=\"en\">\n<head>");
@@ -558,180 +581,97 @@ static void render_html(line_list_t *lines)
   puts("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
   puts("<title>dbglog report</title>");
   puts("<style>");
-  puts("body{margin:0;font:16px/1.5 system-ui,sans-serif;background:#0f141a;color:#e6edf3}");
-  puts("header{position:sticky;top:0;background:#161b22;padding:1rem 1.25rem;border-bottom:1px solid #30363d}");
-  puts("h1{margin:0 0 .5rem;font-size:1.25rem}");
-  puts("p{margin:.25rem 0 .75rem;color:#9da7b3}");
-  puts("nav{display:flex;flex-wrap:wrap;gap:.5rem;margin:.75rem 0}");
-  puts("nav a,button{border:1px solid #30363d;background:#21262d;color:#e6edf3;padding:.35rem .65rem;border-radius:.5rem;text-decoration:none;cursor:pointer}");
+  puts("body{margin:0;font:15px/1.5 system-ui,sans-serif;background:#0f141a;color:#e6edf3}");
+  puts("header{padding:1rem 1.25rem;background:#161b22;border-bottom:1px solid #30363d}");
+  puts("h1{margin:0;font-size:1.25rem}");
   puts("main{padding:1rem 1.25rem 2rem}");
-  puts("details{margin:0 0 .9rem;border:1px solid #30363d;border-radius:.75rem;background:#161b22;overflow:hidden}");
-  puts("summary{list-style:none;cursor:pointer;padding:.8rem 1rem;display:flex;justify-content:space-between;gap:1rem;font-weight:600}");
-  puts("summary::-webkit-details-marker{display:none}");
-  puts("details.pass summary{background:#0f2d1d}");
-  puts("details.fail summary{background:#34161c}");
-  puts("pre{margin:0;padding:1rem;overflow:auto;background:#0d1117;font:14px/1.45 ui-monospace,monospace}");
+  puts("pre{margin:0;padding:1rem;overflow:auto;background:#0d1117;font:13px/1.45 ui-monospace,monospace}");
   puts(".line{display:block;white-space:pre}");
-  puts(".line.pass{color:#3fb950}.line.fail,.line.error{color:#ff7b72}.line.warn{color:#d29922}.line.info{color:#79c0ff}.line.test{color:#c297ff}.line.clock{color:#a5d6ff}.line.verbose{color:#8ddb8c}.line.memory{color:#ffa657}.line.detail{color:#9da7b3}.line.trk{color:#c297ff}");
-  puts(".badge{font-weight:500;color:#9da7b3}.fail .badge{color:#ffb3ad}.pass .badge{color:#8ddb8c}");
+  puts(".line.pass{color:#3fb950}.line.fail,.line.error{color:#ff7b72}");
+  puts(".line.warn{color:#d29922}.line.info{color:#79c0ff}");
+  puts(".line.test{color:#c297ff}.line.clock{color:#a5d6ff}");
+  puts(".line.verbatim{color:#8ddb8c}.line.memory{color:#a5d6ff}");
+  puts(".line.trk{color:#c297ff}");
   puts("</style>");
   puts("</head>\n<body>");
-  puts("<header>");
-  puts("<h1>dbglog HTML report</h1>");
-  puts("<p>Static report generated from dbg logs. File sections can be expanded or collapsed.</p>");
-  puts("<div>");
-  puts("<button type=\"button\" onclick=\"for(const d of document.querySelectorAll('details')) d.open=true\">Expand all</button>");
-  puts("<button type=\"button\" onclick=\"for(const d of document.querySelectorAll('details')) d.open=false\">Collapse all</button>");
-  puts("</div>");
-  puts("<nav>");
-  for (i = 0; i < files.count; i++) {
-    printf("<a href=\"#file-%d\">", i);
-    html_escape(stdout, files.items[i].name);
-    puts("</a>");
-  }
-  puts("</nav>");
-  puts("</header>");
-  puts("<main>");
+  puts("<header><h1>dbglog report</h1></header>");
+  puts("<main><pre>");
 
-  for (i = 0; i < files.count; i++) {
-    file_block_t *file = &files.items[i];
-
-    printf("<details id=\"file-%d\" class=\"%s\">\n<summary><span>", i, file_class(file));
-    html_escape(stdout, file->name);
+  for (i = 0; i < out_count; i++) {
+    printf("<span class=\"line %s\">", out_lines[i].cls);
+    html_esc(out_lines[i].text);
     fputs("</span>", stdout);
-    if (file->summary != NULL) {
-      fputs("<span class=\"badge\">", stdout);
-      html_escape(stdout, file->summary);
-      fputs("</span>", stdout);
-    }
-    puts("</summary>");
-    puts("<pre>");
-    for (j = 0; j < file->lines.count; j++) {
-      printf("<span class=\"line %s\">", line_class(file->lines.items[j]));
-      html_escape(stdout, file->lines.items[j]);
-      puts("</span>");
-    }
-    puts("</pre>");
-    puts("</details>");
   }
+  putchar('\n');
 
-  puts("</main>\n</body>\n</html>");
+  puts("</pre></main>\n</body>\n</html>");
+}
+
+/* ----------------------------------------------------------------
+ * I/O
+ * ---------------------------------------------------------------- */
+
+static int process_stream(FILE *fp, const char *name)
+{
+  char line[MAX_LINE];
+
+  while (fgets(line, sizeof(line), fp))
+    process_line(line);
+
+  if (ferror(fp)) {
+    fprintf(stderr, "dbglog: error reading %s\n", name);
+    return 0;
+  }
+  return 1;
 }
 
 static void usage(FILE *fp, const char *argv0)
 {
-  fprintf(fp, "usage: %s [-h] [-H] [-v] [log ...]\n", argv0);
-  fprintf(fp, "format dbg.h logs as readable text or HTML\n");
-  fprintf(fp, "\n");
+  fprintf(fp, "usage: %s [-F] [-H] [-h] [-v] [log ...]\n", argv0);
+  fprintf(fp, "format dbg.h logs as readable text or HTML\n\n");
+  fprintf(fp, "  -F  show only failures\n");
+  fprintf(fp, "  -H  render static HTML report\n");
   fprintf(fp, "  -h  show this help and exit\n");
-  fprintf(fp, "  -H  render a static HTML report\n");
-  fprintf(fp, "  -v  show version and exit\n");
-  fprintf(fp, "\n");
+  fprintf(fp, "  -v  show version and exit\n\n");
   fprintf(fp, "  With no log files, dbglog reads from standard input.\n");
 }
 
 int main(int argc, char **argv)
 {
-  int ok = 1;
-  int html_mode = 0;
-  int first_file = 1;
+  int i, ok = 1;
 
-  while (first_file < argc && argv[first_file][0] == '-') {
-    if (!strcmp(argv[first_file], "-h")) {
-      usage(stdout, argv[0]);
-      return 0;
-    }
-    if (!strcmp(argv[first_file], "-v")) {
-      puts(DBGLOG_VERSION);
-      return 0;
-    }
-    if (!strcmp(argv[first_file], "-H")) {
-      html_mode = 1;
-      first_file++;
-      continue;
-    }
+  html_mode = 0;
+  fail_only = 0;
+  in_verbatim = 0;
 
-    fprintf(stderr, "dbglog: unknown option %s\n", argv[first_file]);
+  for (i = 1; i < argc && argv[i][0] == '-'; i++) {
+    if (!strcmp(argv[i], "-h")) { usage(stdout, argv[0]); return 0; }
+    if (!strcmp(argv[i], "-v")) { puts(DBGLOG_VERSION);     return 0; }
+    if (!strcmp(argv[i], "-H")) { html_mode = 1; continue; }
+    if (!strcmp(argv[i], "-F")) { fail_only = 1; continue; }
+    fprintf(stderr, "dbglog: unknown option %s\n", argv[i]);
     usage(stderr, argv[0]);
     return 2;
   }
 
-  if (!html_mode) {
-    reset_formatter();
-
-    if (first_file == argc) {
-      ok = process_stream(stdin, "stdin");
-    }
-    else {
-      int i;
-
-      for (i = first_file; i < argc; i++) {
-        FILE *fp = fopen(argv[i], "r");
-
-        if (fp == NULL) {
-          fprintf(stderr, "dbglog: cannot open %s\n", argv[i]);
-          ok = 0;
-          continue;
-        }
-        if (i > first_file) reset_formatter();
-        if (!process_stream(fp, argv[i])) ok = 0;
-        finish_file();
-        fclose(fp);
+  if (i == argc) {
+    ok = process_stream(stdin, "stdin");
+  } else {
+    for (; i < argc; i++) {
+      FILE *fp = fopen(argv[i], "r");
+      if (!fp) {
+        fprintf(stderr, "dbglog: cannot open %s\n", argv[i]);
+        ok = 0;
+        continue;
       }
+      if (!process_stream(fp, argv[i])) ok = 0;
+      fclose(fp);
     }
-
-    if (!ok) return 3;
-    if (first_file == argc) finish_file();
-    return 0;
   }
-  else {
-    line_list_t transformed = {0};
 
-    if (first_file == argc) {
-      line_list_t input = {0};
+  if (in_trk) trk_close();
 
-      ok = read_stream_lines(stdin, "stdin", &input);
-      if (!ok) return 3;
+  if (html_mode) render_html();
 
-      if (is_transformed_lines(&input)) {
-        int i;
-
-        for (i = 0; i < input.count; i++) lines_push(&transformed, input.items[i]);
-      }
-      else {
-        format_raw_lines(&input, &transformed);
-      }
-    }
-    else {
-      int i;
-
-      for (i = first_file; i < argc; i++) {
-        FILE *fp = fopen(argv[i], "r");
-        line_list_t input = {0};
-
-        if (fp == NULL) {
-          fprintf(stderr, "dbglog: cannot open %s\n", argv[i]);
-          ok = 0;
-          continue;
-        }
-
-        if (!read_stream_lines(fp, argv[i], &input)) ok = 0;
-        fclose(fp);
-        if (!ok) continue;
-
-        if (is_transformed_lines(&input)) {
-          int j;
-
-          for (j = 0; j < input.count; j++) lines_push(&transformed, input.items[j]);
-        }
-        else {
-          format_raw_lines(&input, &transformed);
-        }
-      }
-    }
-
-    if (!ok) return 3;
-    render_html(&transformed);
-    return 0;
-  }
+  return ok ? 0 : 3;
 }

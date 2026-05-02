@@ -82,17 +82,17 @@ int main(void)
   }
 
   snprintf(expected, sizeof(expected),
-           "INFO: info message \x0Ft_output.c:%d\n"
-           "WARN: warning message \x0Ft_output.c:%d\n"
-           "EROR: error message \x0Ft_output.c:%d\n"
-           "VRB[: verbose marker \x0Ft_output.c:%d\n"
+           "I:info message\x0Ft_output.c:%d\n"
+           "W:warning message\x0Ft_output.c:%d\n"
+           "E:error message\x0Ft_output.c:%d\n"
+           "V[verbose marker\x0Ft_output.c:%d\n"
            "program stderr sample\n"
-           "VRB]:\n"
-           "TST[: output contract \x0Ft_output.c:%d\n"
-           "PASS: (1) \x0Ft_output.c:%d\n"
-           "FAIL: (value == 1) \x0Ft_output.c:%d\n"
-           "    ` value=2\n"
-           "TST]:\n",
+           "\nV]\x0E\n"
+           "T[output contract\x0Ft_output.c:%d\n"
+           "P:1\x0Ft_output.c:%d\n"
+           "F:value == 1\x0Ft_output.c:%d\n"
+           "F=value=2\n"
+           "T]\n",
            line_info, line_warn, line_error, line_vrb,
            line_test, line_pass, line_fail);
 

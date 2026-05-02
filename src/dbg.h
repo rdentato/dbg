@@ -55,7 +55,6 @@
 #define _dbgmst DBG_OFF
 #define _dbgptr DBG_OFF
 #define _dbgclk DBG_OFF
-#define _dbgnow DBG_OFF
 #define _dbgblk while(0)
 
 // ## No DEBUG
@@ -72,7 +71,6 @@
 #define dbgchk _dbgchk
 #define dbgmst _dbgmst
 #define dbgclk _dbgclk
-#define dbgnow _dbgnow
 #define dbgblk _dbgblk
 #define dbgptr _dbgptr
 
@@ -81,6 +79,7 @@
 // Ask for strdup()/strndup() (but we can't be sure!)
 #define __STDC_WANT_LIB_EXT2__ 1
 
+#include <stdint.h>
 #include <stdio.h>
 #include <time.h>
 #include <stdlib.h>
@@ -120,29 +119,29 @@ static volatile int dbg_zero = 0;
 //   dbgerr(char *, ...)      Prints a  "FAIL:" message.
 
 // Internal helpers
+#define dbg_prt(...)  (fprintf(stderr,__VA_ARGS__),dbg_zero)
 #define dbg_msg(...)  (fprintf(stderr,__VA_ARGS__),     \
-                      fprintf(stderr," \x0F%s:%d\n",__FILE__,__LINE__), \
+                      fprintf(stderr,"\x0F%s:%d\n",__FILE__,__LINE__), \
                       dbg_zero)
+
+#define dbg_putc(c) fputc(c,stderr)
+
+#define dbg_puts(c) fputs(c,stderr)
+
+// ERROR MESSAGE
 #undef  dbgerr
-#define dbgerr(...)   dbg_msg("EROR: " __VA_ARGS__)
-
-#undef  dbgvrb
-#define dbgvrb(...)   for (int dbg_ = 1; \
-                        dbg_ && !dbg_msg("VRB[: " __VA_ARGS__); \
-                        dbg_ = (fputs("VRB]:\n",stderr) , 0))
-
-// Use dbgvrb() around code that intentionally writes to stderr so later
-// log processing can distinguish program output from dbg-generated diagnostics.
+#define dbgerr(...)   dbg_msg("E:" __VA_ARGS__)
 
 #if DEBUG >= DBGLVL_WARN
 #undef  dbgwrn
-#define dbgwrn(...)   dbg_msg("WARN: " __VA_ARGS__)
+#define dbgwrn(...)   dbg_msg("W:" __VA_ARGS__)
 #endif
 
 #if DEBUG >= DBGLVL_INFO
 #undef  dbginf
-#define dbginf(...)   dbg_msg("INFO: " __VA_ARGS__)
+#define dbginf(...)   dbg_msg("I:" __VA_ARGS__)
 #endif
+
 
 // ## Testing 
 //   dbgtst(char *, ...){ ...}     Starts a test case.
@@ -164,23 +163,32 @@ static volatile int dbg_zero = 0;
 
 #if DEBUG >= DBGLVL_TEST
 
+// Use dbgvrb() around code that intentionally writes to stderr so later
+// log processing can distinguish program output from dbg-generated diagnostics.
+
+#undef  dbgvrb
+#define dbgvrb(...)   for (int dbg_ = 1; \
+                        dbg_ && !dbg_msg("V[" __VA_ARGS__); \
+                        dbg_ = (dbg_puts("\nV]\x0E\n") , 0))
+
+
 static char *dbg_nested_test = "";
 
 #undef  dbgtst
 #define dbgtst(...) \
      if (dbg_nested_test[0]) ; \
      else for (int dbg_nested_test = 1; \
-               dbg_nested_test && !dbg_msg("TST[: " __VA_ARGS__); \
-               fputs("TST]:\n",stderr), dbg_nested_test = 0)
+               dbg_nested_test && !dbg_msg("T[" __VA_ARGS__); \
+               dbg_puts("T]\n"), dbg_nested_test = 0)
 
 
 #define dbg_fst(x,...) x
 #define dbg_chk(m,e,...) \
   do { \
     int dbg_err=!(e); \
-    fprintf(stderr,"%s: (%s) \x0F%s:%d\n",(dbg_err?"FAIL":"PASS"),#e,__FILE__,__LINE__); \
+    dbg_prt("%c:%s\x0F%s:%d\n",(dbg_err?'F':'P'),#e,__FILE__,__LINE__); \
     char *dbg_errmsg = "" dbg_fst(__VA_ARGS__,0);\
-    if (dbg_err && (dbg_errmsg[0] != '\0')) { fprintf(stderr,"    ` " __VA_ARGS__); fputc('\n',stderr); } \
+    if (dbg_err && (dbg_errmsg[0] != '\0')) { dbg_prt("F=" __VA_ARGS__); dbg_putc('\n'); } \
     if (m && dbg_err) abort(); \
   } while(0)
 
@@ -212,8 +220,8 @@ static char *dbg_nested_track = "";
 #define dbgtrk(...) \
      if (dbg_nested_track[0]) ; \
      else for (int dbg_nested_track = 1; \
-               dbg_nested_track && !dbg_msg("TRK[: %s", #__VA_ARGS__); \
-               fputs("TRK]:\n",stderr), dbg_nested_track = 0)
+               dbg_nested_track && !dbg_msg("K[%s", #__VA_ARGS__); \
+               dbg_prt("K]\n"), dbg_nested_track = 0)
 
 
 #undef  dbgblk
@@ -234,39 +242,26 @@ static char *dbg_nested_track = "";
 //  _dbgclk(char *, ...) {...}     Execute the block but don't measure time.
 //  
 
+static inline uint32_t dbg_millis() {
+#ifdef DBG_ARDUINO
+  return (uint32_t)millis();
+#else
+  struct timespec ts;
+  clock_gettime(CLOCK_REALTIME, &ts);
+  return (uint32_t)((uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000);
+#endif
+}
+
 typedef struct {
-  clock_t    clk;       time_t     time;    
-  char       tstr[32];  struct tm *time_tm; 
-  long int   elapsed; 
+  uint32_t millis;
+  uint32_t loop;
 } dbgclk_t;
 
 #undef  dbgclk
 #define dbgclk(...)  \
-  for (dbgclk_t dbg_ = {.elapsed = -1};   \
-      \
-       (dbg_.elapsed < 0) && ( \
-          time(&dbg_.time), dbg_.time_tm=localtime(&dbg_.time),    \
-          strftime(dbg_.tstr,32,"%Y-%m-%d %H:%M:%S",dbg_.time_tm),\
-          fprintf(stderr,"CLK[: %s",dbg_.tstr), dbg_msg(" " __VA_ARGS__) , \
-          dbg_.clk = clock() \
-       ) ;   \
-      \
-       dbg_.elapsed=(long int)(clock()-dbg_.clk),               \
-       fprintf(stderr,"CLK]: +%ld/%ld sec.\n", dbg_.elapsed, (long int)CLOCKS_PER_SEC) \
-     )
-
-#undef dbgnow
-#define dbgnow(...)  \
-  for (dbgclk_t dbg_ = {.elapsed = -1}   \
-      ; \
-       (dbg_.elapsed < 0) && ( \
-          time(&dbg_.time), dbg_.time_tm=localtime(&dbg_.time),    \
-          strftime(dbg_.tstr,32,"%Y-%m-%d %H:%M:%S",dbg_.time_tm),\
-          fprintf(stderr,"NOW=: %s",dbg_.tstr), dbg_msg(" " __VA_ARGS__) \
-       )\
-      ; \
-       dbg_.elapsed=1 \
-     )
+  for (dbgclk_t dbg_ = { dbg_millis(), !(dbg_prt("C[%u",dbg_.millis) , dbg_msg(" " __VA_ARGS__))}; \
+      dbg_.loop; \
+      dbg_.loop = dbg_msg("C]%u ms",(dbg_millis() - dbg_.millis)))
 
 // ## Grouping
 // 
@@ -309,26 +304,23 @@ static inline int dbg_avoid_warning() { return (dbg_nested_test[0] && dbg_nested
 //  If DEBUG_ALLOC is defined, each call to the memory
 //  related functions will produce a line in the log like this:
 //
-//       MTRK: function(args) ptr_in size ptr_out
-//
-//  0 N P malloc, calloc, strdup, realloc(NULL,N)
-//  P 0 0 free, realloc(P,0)
-//  P N P realloc(P,N)
+//       M:function args
 //
 //  The function dbgptr is meant to verify that a pointer to allocated
 //  memory is "valid", i.e. that it belongs to a block previously allocated:
 // 
 //    dbgptr(void *p)   Checks if the pointer p is witin a block
-//                      allocated with malloc(), calloc(), etc.
+//                      allocated with malloc(), calloc(), etc. 
+//                      and has not been freed.
+//                         
+//  It can be helpful to check for buffer overruns.
 //
-//  It can be helpful to check for buffer overruns
-//
+//  All checks will be perfomed by the utility dbglog.
 
 #include <stdlib.h>
 #include <inttypes.h>
 
-#define dbg_write(...)    (fprintf(stderr,__VA_ARGS__))
-#define dbg_writeln(...)  (fprintf(stderr,__VA_ARGS__) , fprintf(stderr," \x0F%s:%d\n",file,line))
+#define dbg_writeln(...)  (dbg_prt(__VA_ARGS__) , dbg_prt("\x0F%s:%d\n",file,line))
 
 // The only reason we need dbg_p is that %p representation of NULL pointers is
 // compiler dependant. This way the pointer is uniquely converted in an integer.
@@ -337,7 +329,7 @@ static inline int dbg_avoid_warning() { return (dbg_nested_test[0] && dbg_nested
 
 static inline void *dbg_malloc(size_t size, const char *file, int line)
 {
-  dbg_write("MTRK: malloc(%zd) 0 %zd ",size,size);
+  dbg_prt("M:malloc %zd ",size);
   void *ptr = malloc(size);
   dbg_writeln("%zX",dbg_p(ptr));
   return ptr;
@@ -345,13 +337,13 @@ static inline void *dbg_malloc(size_t size, const char *file, int line)
 
 static inline void dbg_free(void *ptr, const char *file, int line)
 {
-  dbg_writeln("MTRK: free(%zX) %zX 0 0",dbg_p(ptr),dbg_p(ptr));
+  dbg_writeln("M:free %zX",dbg_p(ptr));
   free(ptr);
 }
 
 static inline void *dbg_calloc(size_t count, size_t size, const char *file, int32_t line)
 {
-  dbg_write("MTRK: calloc(%zd,%zd) 0 %zd ",count,size,count*size);
+  dbg_prt("M:calloc %zd %zd ",count,size);
   void *ptr = calloc(count,size);
   dbg_writeln("%zX",dbg_p(ptr));
   return ptr;
@@ -359,7 +351,7 @@ static inline void *dbg_calloc(size_t count, size_t size, const char *file, int3
 
 static inline void *dbg_realloc(void *ptr, size_t size, const char *file, int32_t line)
 {
-  dbg_write("MTRK: realloc(%zX,%zd) %zX %zd ",dbg_p(ptr),size,dbg_p(ptr),size);
+  dbg_prt("M:realloc %zX %zd ",dbg_p(ptr),size);
   ptr = realloc(ptr,size);
   dbg_writeln("%zX",dbg_p(ptr));
   return ptr;
@@ -371,7 +363,7 @@ char *strndup(const char *s, size_t size);
 
 static inline char *dbg_strdup(const char *s, const char *file, int line)
 {
-  dbg_write("MTRK: strdup(%zX) 0 ",dbg_p(s));
+  dbg_prt("M:strdup %zX ",dbg_p(s));
   char *ptr = (char *)strdup(s);
   size_t size = ptr ? strlen(ptr)+1 : 0;
   dbg_writeln("%zd %zX",size,dbg_p(ptr));
@@ -380,10 +372,10 @@ static inline char *dbg_strdup(const char *s, const char *file, int line)
 
 static inline char *dbg_strndup(const char *s, size_t size, const char *file, int line)
 {
-  dbg_write("MTRK: strndup(%zX,%zd) 0 ",dbg_p(s),size);
+  dbg_prt("M:strndup %zX %zd ",dbg_p(s),size);
   char *ptr = (char *)strndup(s, size);
   size = ptr ? strlen(ptr)+1 : 0;
-  dbg_writeln("%zd %zX",size,dbg_p(ptr));
+  dbg_writeln("%zX",dbg_p(ptr));
   return ptr;
 }
 
@@ -395,44 +387,44 @@ static inline char *dbg_strndup(const char *s, size_t size, const char *file, in
 static inline char *dbg_strcpy(char *dest, const char *src, const char *file, int line)
 {
   size_t size = src? strlen(src)+1 : 0;
-  dbg_writeln("MCHK: strcpy(%zX,%zX) %zX %zX",dbg_p(dest),dbg_p(src),dbg_p(dest),dbg_p(dest+size));
+  dbg_writeln("M?strcpy %zX %zX %zd",dbg_p(dest),dbg_p(src),size);
   return strcpy(dest,src);
 }
 
 static inline char *dbg_strncpy(char *dest, const char *src, size_t size, const char *file, int line)
 {
-  dbg_writeln("MCHK: strncpy(%zX,%zX,%zd) %zX %zX",dbg_p(dest),dbg_p(src),size,dbg_p(dest),dbg_p(dest+size));
+  dbg_writeln("M?strncpy %zX %zX %zd",dbg_p(dest),dbg_p(src),size);
   return strncpy(dest,src,size);
 }
 
 static inline char *dbg_strcat(char *dest, const char *src, const char *file, int line)
 {
   size_t size = (dest ? strlen(dest) : 0) + (src? strlen(src)+1 : 0);
-  dbg_writeln("MCHK: strcat(%zX,%zX) %zX %zX",dbg_p(dest),dbg_p(src),dbg_p(dest),dbg_p(dest+size));
+  dbg_writeln("M?strcat %zX %zX %zd",dbg_p(dest),dbg_p(src),size);
   return strcat(dest,src);
 }
 
 static inline char *dbg_strncat(char *dest, const char *src, size_t size, const char *file, int line)
 {
-  dbg_writeln("MCHK: strncat(%zX,%zX,%zd) %zX %zX",dbg_p(dest),dbg_p(src),size,dbg_p(dest),dbg_p(dest+((dest ? strlen(dest) : 0) + size)));
+  dbg_writeln("M?strncat %zX %zX %zd",dbg_p(dest),dbg_p(src),size);
   return strncat(dest,src,size);
 }
 
 static inline void *dbg_memcpy(void *dest, const void *src, size_t size, const char *file, int line)
 {
-  dbg_writeln("MCHK: memcpy(%zX,%zX,%zd) %zX %zX",dbg_p(dest),dbg_p(src),size,dbg_p(dest),dbg_p((char *)dest+size));
+  dbg_writeln("M?memcpy %zX %zX %zd",dbg_p(dest),dbg_p(src),size);
   return memcpy(dest,src,size);
 }
 
 static inline void *dbg_memmove(void *dest, const void *src, size_t size, const char *file, int line)
 {
-  dbg_writeln("MCHK: memmove(%zX,%zX,%zd) %zX %zX",dbg_p(dest),dbg_p(src),size,dbg_p(dest),dbg_p((char *)dest+size));
+  dbg_writeln("M?memmove %zX %zX %zd",dbg_p(dest),dbg_p(src),size);
   return memmove(dest,src,size);
 }
 
 static inline void *dbg_memset(void *dest, int c, size_t size, const char *file, int line)
 {
-  dbg_writeln("MCHK: memset(%zX,%zd) %zX %zX",dbg_p(dest),size,dbg_p(dest),dbg_p((char *)dest+size));
+  dbg_writeln("M?memset %zX %zd",dbg_p(dest),size);
   return memset(dest,c,size);
 }
 
@@ -450,7 +442,7 @@ static inline void *dbg_memset(void *dest, int c, size_t size, const char *file,
 #define memset(d,c,n)  dbg_memset(d,c,n,__FILE__, __LINE__)
 
 #undef  dbgptr
-#define dbgptr(p) dbg_msg("MCHK: ptr %zX", dbg_p(p))
+#define dbgptr(p) dbg_msg("M?pointer %zX", dbg_p(p))
 
 #endif // DEBUG_ALLOC
 
