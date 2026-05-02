@@ -8,6 +8,7 @@ Refactor `dbg.h` for embedded compatibility: minimize C library dependencies, em
 - [!] Phase 2: Raw-emit pipeline — on hold.
 - [x] dbglog rewrite — unified text/HTML, 6-char markers, M? tracking, dbgtrk evaluation.
 - [x] Test `t_alloc_fail.c` — 9 intentional M? violations, all correctly detected.
+- [~] dbglog hardening — correctness/robustness fixes and regression tests implemented; structural cleanup remains.
 
 # Phase 1 — Event Codes (done)
 
@@ -109,6 +110,66 @@ Implemented:
 5. **Clock blocks** (`C[`…`C]`) passed through.
 6. No FILE/RSLT statistics.
 7. Source locations parsed from `\x0F` separator.
+
+## dbglog Hardening Plan (planned)
+
+Objective: improve `src/dbglog.c` correctness, robustness, portability, and tests while preserving the current text log format and CLI unless explicitly changed.
+
+Scope guard: this is not Phase 2 and must not start the raw-emit/binary parser work.
+
+Milestones:
+
+1. [x] Baseline and regression tests
+   - Run current suite and capture current expected behavior.
+   - Add focused tests for known bug cases before or alongside fixes.
+
+2. [x] Parsing correctness fixes
+   - Parse pointer tokens as hex explicitly; parse sizes/counts as decimal.
+   - Validate `M?memset` arity before reading the size token.
+   - Make malformed or unknown `M?` checks fail explicitly.
+   - Validate event delimiters before prefix expansion.
+   - Prevent fallback/plain lines from being rewritten as events.
+
+3. [x] Allocation tracking correctness
+   - Fix `realloc` failure semantics so failed realloc keeps the old allocation.
+   - Handle `realloc(ptr, 0)` deliberately.
+   - Avoid pointer-range overflow in allocation lookup.
+   - Report when `MAX_ALLOCS` is exceeded instead of silently dropping records.
+
+4. [x] Output and filtering fixes
+   - Make `-F` behavior consistent in text and HTML modes.
+   - Fix no-source-location formatting for `M?` output.
+   - Check allocation failure from `strdup()` in HTML buffering.
+
+5. [x] Input and multi-file behavior
+   - Detect and report overlong input lines rather than silently splitting them.
+   - Preserve current concatenated-log state across multiple input files.
+   - Report unterminated `dbgtrk` or verbatim blocks at end of input.
+
+6. [x] Portability cleanup
+   - Wrap GCC/Clang `__attribute__((format(...)))` behind a portability macro.
+
+7. [ ] Internal structure cleanup
+   - Separate parsing/evaluation from rendering.
+   - Introduce a small parsed-event representation.
+   - Centralize event-code and delimiter rules.
+
+8. [x] Golden tests
+   - Cover digit-only hex pointers, malformed `M?`, unknown `M?`, short `M?memset`, realloc failure, pointer overflow safety, event-like fallback text, `-F -H`, long lines, too many `dbgtrk` expectations, `MAX_ALLOCS` overflow, and selected multi-file behavior.
+
+Open decisions:
+
+- Resolved: `dbglog -F -H` emits only failure lines, matching text `-F` behavior.
+- Resolved: multi-file input preserves current concatenated-log behavior by sharing parser/allocation state across files.
+- Resolved: `dbgtrk` keeps the first 8 expectations; additional expectations are ignored and produce one inserted `FAIL` line in dbglog output.
+
+Completion criteria:
+
+- Existing tests pass.
+- New regression/golden tests pass.
+- `src/dbglog.c` builds cleanly with current warning flags.
+- All listed review points are fixed, tested, or explicitly deferred.
+- Phase 2/raw-emit work remains untouched.
 
 ## Blockers
 

@@ -13,6 +13,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(__GNUC__) || defined(__clang__)
+#define DBGLOG_PRINTF(a,b) __attribute__((format(printf,a,b)))
+#else
+#define DBGLOG_PRINTF(a,b)
+#endif
+
 #define DBGLOG_VERSION "dbglog 2.0"
 #define MAX_LINE        8192
 #define MAX_ALLOCS      4096
@@ -34,10 +40,41 @@ static int  html_mode;
 static int  fail_only;
 static int  in_verbatim;
 static int  in_trk;
+static int  alloc_limit_reported;
+
+static void diag(const char *fmt, ...) DBGLOG_PRINTF(1,2);
+
+static void diag(const char *fmt, ...)
+{
+  va_list ap;
+  fputs("dbglog: ", stderr);
+  va_start(ap, fmt);
+  vfprintf(stderr, fmt, ap);
+  va_end(ap);
+  fputc('\n', stderr);
+}
 
 static void alloc_add(uintptr_t ptr, size_t size)
 {
-  if (ptr == 0 || alloc_count >= MAX_ALLOCS) return;
+  int i;
+
+  if (ptr == 0) return;
+
+  for (i = 0; i < alloc_count; i++) {
+    if (allocs[i].ptr == ptr) {
+      allocs[i].size = size;
+      return;
+    }
+  }
+
+  if (alloc_count >= MAX_ALLOCS) {
+    if (!alloc_limit_reported) {
+      diag("allocation table full; further allocations ignored");
+      alloc_limit_reported = 1;
+    }
+    return;
+  }
+
   allocs[alloc_count].ptr  = ptr;
   allocs[alloc_count].size = size;
   alloc_count++;
@@ -58,7 +95,8 @@ static int alloc_find(uintptr_t ptr, size_t *size)
 {
   int i;
   for (i = 0; i < alloc_count; i++) {
-    if (ptr >= allocs[i].ptr && ptr < allocs[i].ptr + allocs[i].size) {
+    if (ptr >= allocs[i].ptr &&
+        (uintptr_t)(ptr - allocs[i].ptr) < allocs[i].size) {
       if (size) *size = allocs[i].size - (size_t)(ptr - allocs[i].ptr);
       return 1;
     }
@@ -78,10 +116,10 @@ typedef struct {
 
 static trk_expect_t trk_expects[MAX_TRK_EXPECTS];
 static int          trk_expect_count;
+static int          trk_expect_ignored;
 
 /* forward decls — output helpers defined later */
-static void out_fmt(const char *cls, const char *fmt, ...)
-     __attribute__((format(printf,2,3)));
+static void out_fmt(const char *cls, const char *fmt, ...) DBGLOG_PRINTF(2,3);
 static void out_line(const char *cls, const char *line);
 
 static char trk_tst_file[512];
@@ -98,6 +136,7 @@ static void trk_set_tst(const char *file, int lnum)
 static void trk_reset(void)
 {
   trk_expect_count = 0;
+  trk_expect_ignored = 0;
   memset(trk_expects, 0, sizeof(trk_expects));
 }
 
@@ -111,28 +150,35 @@ static void trk_open(const char *msg)
   if (!p) return;
   p++;
 
-  while (*p && trk_expect_count < MAX_TRK_EXPECTS) {
+  while (*p) {
+    int must;
+
     while (*p == ' ' || *p == '\t' || *p == ',') p++;
     if (*p != '"') break;
     p++;
     if (*p != '=' && *p != '!') break;
 
-    trk_expect_t *e = &trk_expects[trk_expect_count];
-    e->must  = (*p == '=');
-    e->found = 0;
+    must = (*p == '=');
     p++;
 
     q = strchr(p, '"');
     if (!q) break;
-    {
+
+    if (trk_expect_count < MAX_TRK_EXPECTS) {
+      trk_expect_t *e = &trk_expects[trk_expect_count];
       size_t len = (size_t)(q - p) + 1;
       if (len >= sizeof(e->expect)) len = sizeof(e->expect) - 1;
-      e->expect[0] = e->must ? '=' : '!';
+      e->must  = must;
+      e->found = 0;
+      e->expect[0] = must ? '=' : '!';
       memcpy(e->expect + 1, p, len - 1);
       e->expect[len] = '\0';
+      trk_expect_count++;
+    } else {
+      trk_expect_ignored++;
     }
+
     p = q + 1;
-    trk_expect_count++;
   }
 }
 
@@ -158,16 +204,27 @@ static void trk_close(void)
     int failed = (e->must && !e->found) || (!e->must && e->found);
     const char *cls = failed ? "fail" : "pass";
     if (trk_tst_file[0]) {
-      if (failed || !fail_only || html_mode)
+      if (failed || !fail_only)
         out_fmt(cls, "%-5s: (%s) %s:%d",
                 failed ? "FAIL" : "PASS", e->expect,
                 trk_tst_file, trk_tst_line);
     } else {
-      if (failed || !fail_only || html_mode)
+      if (failed || !fail_only)
         out_fmt(cls, "%-5s: (%s)",
                 failed ? "FAIL" : "PASS", e->expect);
     }
   }
+
+  if (trk_expect_ignored) {
+    if (trk_tst_file[0])
+      out_fmt("fail", "%-5s: (too many dbgtrk expectations; ignored %d after max %d) %s:%d",
+              "FAIL", trk_expect_ignored, MAX_TRK_EXPECTS,
+              trk_tst_file, trk_tst_line);
+    else
+      out_fmt("fail", "%-5s: (too many dbgtrk expectations; ignored %d after max %d)",
+              "FAIL", trk_expect_ignored, MAX_TRK_EXPECTS);
+  }
+
   trk_reset();
 }
 
@@ -178,18 +235,14 @@ static void trk_close(void)
 static int has_prefix(const char *s, const char *p)
 { return strncmp(s, p, strlen(p)) == 0; }
 
-static int is_hex_token(const char *s)
+static uintptr_t parse_ptr_token(const char *s)
 {
-  for (; *s; s++)
-    if (isxdigit((unsigned char)*s) &&
-        (*s >= 'A' || *s >= 'a'))
-      return 1;
-  return 0;
+  return (uintptr_t)strtoull(s, NULL, 16);
 }
 
-static uintptr_t parse_token(const char *s)
+static size_t parse_size_token(const char *s)
 {
-  return (uintptr_t)strtoull(s, NULL, is_hex_token(s) ? 16 : 10);
+  return (size_t)strtoull(s, NULL, 10);
 }
 
 static int tokenize(char *msg, char *tok[], int max)
@@ -221,26 +274,42 @@ static void handle_M_colon(char *msg)
   if (nt < 1) return;
 
   if (!strcmp(t[0], "malloc") && nt >= 3)
-    alloc_add(parse_token(t[2]), (size_t)parse_token(t[1]));
+    alloc_add(parse_ptr_token(t[2]), parse_size_token(t[1]));
   else if (!strcmp(t[0], "free") && nt >= 2)
-    alloc_free(parse_token(t[1]));
-  else if (!strcmp(t[0], "calloc") && nt >= 4)
-    alloc_add(parse_token(t[3]),
-              (size_t)(parse_token(t[1]) * parse_token(t[2])));
-  else if (!strcmp(t[0], "realloc") && nt >= 4) {
-    uintptr_t old = parse_token(t[1]);
-    if (old) alloc_free(old);
-    { uintptr_t nw = parse_token(t[3]);
-      if (nw) alloc_add(nw, (size_t)parse_token(t[2])); }
+    alloc_free(parse_ptr_token(t[1]));
+  else if (!strcmp(t[0], "calloc") && nt >= 4) {
+    size_t count = parse_size_token(t[1]);
+    size_t size  = parse_size_token(t[2]);
+    if (size && count > ((size_t)-1) / size)
+      diag("calloc size overflow in log record");
+    else
+      alloc_add(parse_ptr_token(t[3]), count * size);
+  } else if (!strcmp(t[0], "realloc") && nt >= 4) {
+    uintptr_t old = parse_ptr_token(t[1]);
+    size_t    sz  = parse_size_token(t[2]);
+    uintptr_t nw  = parse_ptr_token(t[3]);
+    if (nw) {
+      if (old) alloc_free(old);
+      alloc_add(nw, sz);
+    } else if (old && sz == 0) {
+      alloc_free(old);
+    }
   } else if (!strcmp(t[0], "strdup") && nt >= 4)
-    alloc_add(parse_token(t[3]), (size_t)parse_token(t[2]));
+    alloc_add(parse_ptr_token(t[3]), parse_size_token(t[2]));
   else if (!strcmp(t[0], "strndup") && nt >= 4)
-    alloc_add(parse_token(t[3]), (size_t)parse_token(t[2]));
+    alloc_add(parse_ptr_token(t[3]), parse_size_token(t[2]));
 }
 
 /* ----------------------------------------------------------------
  * M? boundary checking
  * ---------------------------------------------------------------- */
+
+static int is_mem_check_op(const char *op)
+{
+  return !strcmp(op, "strcpy")  || !strcmp(op, "strncpy") ||
+         !strcmp(op, "strcat")  || !strcmp(op, "strncat") ||
+         !strcmp(op, "memcpy")  || !strcmp(op, "memmove");
+}
 
 /* Returns 1 on PASS, 0 on FAIL. Writes result line to *out. */
 static int check_M_question(char *msg, char *out, size_t osize)
@@ -254,27 +323,45 @@ static int check_M_question(char *msg, char *out, size_t osize)
   *out = '\0';
   if (has_prefix(msg, "M?")) msg += 2;
   nt = tokenize(msg, t, 6);
-  if (nt < 2) { snprintf(out, osize, "????"); return 0; }
+  if (nt < 1) {
+    snprintf(out, osize, "FAIL malformed M? record");
+    return 0;
+  }
 
   if (!strcmp(t[0], "pointer")) {
-    p1 = parse_token(t[1]);
+    if (nt < 2) {
+      snprintf(out, osize, "FAIL malformed M?pointer record");
+      return 0;
+    }
+    p1 = parse_ptr_token(t[1]);
     ok = (p1 == 0) || alloc_find(p1, NULL);
     snprintf(out, osize, "%-5spointer 0x%zX",
              ok ? "PASS" : "FAIL", (size_t)p1);
   } else if (!strcmp(t[0], "memset")) {
-    p1 = parse_token(t[1]);
-    sz = (size_t)parse_token(t[2]);
+    if (nt < 3) {
+      snprintf(out, osize, "FAIL malformed M?memset record");
+      return 0;
+    }
+    p1 = parse_ptr_token(t[1]);
+    sz = parse_size_token(t[2]);
     ok = alloc_find(p1, &avail);
     ok = ok && (sz <= avail);
     snprintf(out, osize, "%-5smemset 0x%zX +%zu (buf=%zu)",
              ok ? "PASS" : "FAIL", (size_t)p1, sz, avail);
-  } else if (nt >= 4) {
-    p1 = parse_token(t[1]);
-    sz = (size_t)parse_token(t[3]);
+  } else if (is_mem_check_op(t[0])) {
+    if (nt < 4) {
+      snprintf(out, osize, "FAIL malformed M?%s record", t[0]);
+      return 0;
+    }
+    p1 = parse_ptr_token(t[1]);
+    sz = parse_size_token(t[3]);
     ok = alloc_find(p1, &avail);
     if (ok && sz > avail) ok = 0;
     snprintf(out, osize, "%-5s%s 0x%zX +%zu (buf=%zu)",
              ok ? "PASS" : "FAIL", t[0], (size_t)p1, sz, avail);
+  } else {
+    snprintf(out, osize, "FAIL unknown M? operation: %s", t[0]);
+    return 0;
   }
   return ok;
 }
@@ -330,21 +417,35 @@ static void split_line(const char *raw, char *msg, size_t msize,
  * event-code expansion — all markers padded to 6 chars
  * ---------------------------------------------------------------- */
 
-static const char *expand_code(char c)
+static int event_prefix(const char *msg, const char **word,
+                        char *delim, const char **rest)
 {
-  switch (c) {
-  case 'E': return "ERROR";
-  case 'W': return "WARN";
-  case 'I': return "INFO";
-  case 'P': return "PASS";
-  case 'F': return "FAIL";
-  case 'T': return "TEST";
-  case 'K': return "TRACK";
-  case 'V': return "VERB";
-  case 'C': return "CLOCK";
-  case 'M': return "MEM";
-  default: return NULL;
+  if (!msg[0] || !msg[1]) return 0;
+
+  if (msg[0] == 'F' && msg[1] == '=') {
+    *word = "FAIL";
+    *delim = '=';
+    *rest = msg + 2;
+    return 1;
   }
+
+  *delim = msg[1];
+  *rest = msg + 2;
+
+  switch (msg[0]) {
+  case 'E': if (*delim == ':') { *word = "ERROR"; return 1; } break;
+  case 'W': if (*delim == ':') { *word = "WARN";  return 1; } break;
+  case 'I': if (*delim == ':') { *word = "INFO";  return 1; } break;
+  case 'P': if (*delim == ':') { *word = "PASS";  return 1; } break;
+  case 'F': if (*delim == ':') { *word = "FAIL";  return 1; } break;
+  case 'T': if (*delim == '[' || *delim == ']') { *word = "TEST";  return 1; } break;
+  case 'K': if (*delim == '[' || *delim == ']') { *word = "TRACK"; return 1; } break;
+  case 'V': if (*delim == '[' || *delim == ']') { *word = "VERB";  return 1; } break;
+  case 'C': if (*delim == '[' || *delim == ']') { *word = "CLOCK"; return 1; } break;
+  case 'M': if (*delim == ':' || *delim == '?') { *word = "MEM";   return 1; } break;
+  default: break;
+  }
+  return 0;
 }
 
 /* Rewrite msg prefix: "E:text" → "ERROR:text" (6-char marker).
@@ -355,24 +456,26 @@ static int expand_prefix(char *msg, size_t msize)
   const char *word;
   char delim;
   const char *rest;
-  if (msg[0] && msg[1] && msg[2] && msg[0] == 'F' && msg[1] == '=') {
-    word = "FAIL";
-    delim = '=';
-    rest = msg + 2;
-  } else if (msg[0] && msg[1]) {
-    word = expand_code(msg[0]);
-    if (!word) return 0;
-    delim = msg[1];
-    rest = msg + 2;
-  } else {
-    return 0;
-  }
+
+  if (!event_prefix(msg, &word, &delim, &rest)) return 0;
 
   /* pad word to 5 chars, then delimiter, then rest */
-  if (rest && rest[0])
-    snprintf(buf, sizeof(buf), "%-5s%c %s", word, delim, rest);
-  else
-    snprintf(buf, sizeof(buf), "%-5s%c", word, delim);
+  {
+    size_t pos;
+    int n = snprintf(buf, sizeof(buf), "%-5s%c", word, delim);
+    if (n < 0) return 0;
+    pos = (size_t)n;
+    if (pos >= sizeof(buf)) pos = sizeof(buf) - 1;
+    if (rest && rest[0] && pos < sizeof(buf) - 1) {
+      size_t len;
+      buf[pos++] = ' ';
+      len = strlen(rest);
+      if (len >= sizeof(buf) - pos) len = sizeof(buf) - pos - 1;
+      memcpy(buf + pos, rest, len);
+      pos += len;
+      buf[pos] = '\0';
+    }
+  }
   snprintf(msg, msize, "%s", buf);
   return 1;
 }
@@ -392,12 +495,21 @@ static int         out_cap;
 
 static void html_push(const char *text, const char *cls)
 {
+  char *copy;
+
   if (out_count == out_cap) {
-    out_cap = out_cap ? out_cap * 2 : 128;
-    out_lines = realloc(out_lines, (size_t)out_cap * sizeof(*out_lines));
-    if (!out_lines) { fputs("dbglog: out of memory\n", stderr); exit(3); }
+    int new_cap = out_cap ? out_cap * 2 : 128;
+    out_line_t *new_lines = realloc(out_lines,
+                                    (size_t)new_cap * sizeof(*out_lines));
+    if (!new_lines) { fputs("dbglog: out of memory\n", stderr); exit(3); }
+    out_lines = new_lines;
+    out_cap = new_cap;
   }
-  out_lines[out_count].text = strdup(text ? text : "");
+
+  copy = strdup(text ? text : "");
+  if (!copy) { fputs("dbglog: out of memory\n", stderr); exit(3); }
+
+  out_lines[out_count].text = copy;
   snprintf(out_lines[out_count].cls, sizeof(out_lines[out_count].cls),
            "%s", cls ? cls : "");
   out_count++;
@@ -411,8 +523,7 @@ static void out_line(const char *cls, const char *line)
     puts(line);
 }
 
-static void out_fmt(const char *cls, const char *fmt, ...)
-     __attribute__((format(printf,2,3)));
+static void out_fmt(const char *cls, const char *fmt, ...) DBGLOG_PRINTF(2,3);
 
 static void out_fmt(const char *cls, const char *fmt, ...)
 {
@@ -445,7 +556,7 @@ static void emit_fail(const char *msg, const char *file, int lnum)
 
 static void emit_ok(const char *msg, const char *file, int lnum, const char *cls)
 {
-  if (!html_mode && fail_only) return;
+  if (fail_only) return;
   emit_line(msg, file, lnum, cls);
 }
 
@@ -476,7 +587,7 @@ static void process_line(const char *raw)
 
   /* --- inside verbatim block ------------------------------------ */
   if (in_verbatim) {
-    if (!fail_only || html_mode) out_line("verbatim", tmp);
+    if (!fail_only) out_line("verbatim", tmp);
     return;
   }
 
@@ -507,10 +618,8 @@ static void process_line(const char *raw)
     int  ok;
     snprintf(saved, sizeof(saved), "%s", msg);
     ok = check_M_question(msg, result, sizeof(result));
-    if (!fail_only || html_mode || !ok) {
-      expand_prefix(saved, sizeof(saved));
-      out_fmt(ok ? "pass" : "fail", "%s %s:%d",
-              saved, file[0] ? file : "", lnum);
+    if (!fail_only || !ok) {
+      emit_line(saved, file, lnum, ok ? "pass" : "fail");
       if (file[0])
         out_fmt(ok ? "pass" : "fail", "%s %s:%d", result, file, lnum);
       else
@@ -614,15 +723,28 @@ static void render_html(void)
 static int process_stream(FILE *fp, const char *name)
 {
   char line[MAX_LINE];
+  int  ok = 1;
+  int  lnum = 0;
 
-  while (fgets(line, sizeof(line), fp))
+  while (fgets(line, sizeof(line), fp)) {
+    size_t len;
+    lnum++;
+    len = strlen(line);
+    if (len > 0 && line[len - 1] != '\n' && !feof(fp)) {
+      int ch;
+      diag("%s:%d: input line exceeds %d bytes", name, lnum, MAX_LINE - 1);
+      ok = 0;
+      do { ch = fgetc(fp); } while (ch != '\n' && ch != EOF);
+      continue;
+    }
     process_line(line);
+  }
 
   if (ferror(fp)) {
     fprintf(stderr, "dbglog: error reading %s\n", name);
     return 0;
   }
-  return 1;
+  return ok;
 }
 
 static void usage(FILE *fp, const char *argv0)
@@ -643,6 +765,7 @@ int main(int argc, char **argv)
   html_mode = 0;
   fail_only = 0;
   in_verbatim = 0;
+  in_trk = 0;
 
   for (i = 1; i < argc && argv[i][0] == '-'; i++) {
     if (!strcmp(argv[i], "-h")) { usage(stdout, argv[0]); return 0; }
@@ -669,7 +792,15 @@ int main(int argc, char **argv)
     }
   }
 
-  if (in_trk) trk_close();
+  if (in_trk) {
+    diag("unterminated dbgtrk block at end of input");
+    ok = 0;
+    trk_close();
+  }
+  if (in_verbatim) {
+    diag("unterminated verbatim block at end of input");
+    ok = 0;
+  }
 
   if (html_mode) render_html();
 
