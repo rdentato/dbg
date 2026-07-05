@@ -61,6 +61,7 @@ int main(void)
     strcat(u, "toolong");                 /* M? FAIL: needs 8 bytes */
 
     free(q);
+    free(r);
     free(s);
     free(u);
   }

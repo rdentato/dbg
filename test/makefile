@@ -18,6 +18,7 @@ LIBS=
 TESTS_SRC_C=$(wildcard t_*.c)
 TESTS_C=$(TESTS_SRC_C:.c=)
 TESTS_SH=$(wildcard t_*.sh)
+XTESTS_SRC=$(wildcard x_*.c)
 
 TESTS_SRC=$(TST_SRC_C)
 TESTS=$(TESTS_C:%=%$(_EXE))
@@ -36,6 +37,13 @@ runtest: all $(DBGLOG)
 	done
 	@set -e; for test in $(TESTS_SH); do \
 		DBGLOG=$(DBGLOG) sh ./$$test; \
+	done
+	@set -e; for src in $(XTESTS_SRC); do \
+		if $(CC) $(CFLAGS) -fsyntax-only $$src 2>/dev/null; then \
+			echo "$$src: compiled but was expected to fail to compile"; \
+			exit 1; \
+		fi; \
+		echo "$$src: failed to compile as expected"; \
 	done
 
 $(DBGLOG): ../src/dbglog.c

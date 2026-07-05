@@ -40,6 +40,7 @@ static int  html_mode;
 static int  fail_only;
 static int  in_verbatim;
 static int  in_trk;
+static int  in_test;
 static int  alloc_limit_reported;
 
 static void diag(const char *fmt, ...) DBGLOG_PRINTF(1,2);
@@ -80,15 +81,17 @@ static void alloc_add(uintptr_t ptr, size_t size)
   alloc_count++;
 }
 
-static void alloc_free(uintptr_t ptr)
+static int alloc_free(uintptr_t ptr)
 {
   int i;
+  if (ptr == 0) return 1;
   for (i = 0; i < alloc_count; i++) {
     if (allocs[i].ptr == ptr) {
       allocs[i] = allocs[--alloc_count];
-      return;
+      return 1;
     }
   }
+  return 0;
 }
 
 static int alloc_find(uintptr_t ptr, size_t *size)
@@ -122,30 +125,28 @@ static int          trk_expect_ignored;
 static void out_fmt(const char *cls, const char *fmt, ...) DBGLOG_PRINTF(2,3);
 static void out_line(const char *cls, const char *line);
 
-static char trk_tst_file[512];
-static int  trk_tst_line;
-
-static void trk_set_tst(const char *file, int lnum)
-{
-  if (file && file[0]) {
-    snprintf(trk_tst_file, sizeof(trk_tst_file), "%s", file);
-    trk_tst_line = lnum;
-  }
-}
+static char trk_file[512];
+static int  trk_line;
 
 static void trk_reset(void)
 {
   trk_expect_count = 0;
   trk_expect_ignored = 0;
+  trk_file[0] = '\0';
+  trk_line = 0;
   memset(trk_expects, 0, sizeof(trk_expects));
 }
 
-static void trk_open(const char *msg)
+static void trk_open(const char *msg, const char *file, int lnum)
 {
   const char *p = strchr(msg, '[');
   const char *q;
 
   trk_reset();
+  if (file && file[0]) {
+    snprintf(trk_file, sizeof(trk_file), "%s", file);
+    trk_line = lnum;
+  }
   in_trk = 1;
   if (!p) return;
   p++;
@@ -203,11 +204,11 @@ static void trk_close(void)
     trk_expect_t *e = &trk_expects[i];
     int failed = (e->must && !e->found) || (!e->must && e->found);
     const char *cls = failed ? "fail" : "pass";
-    if (trk_tst_file[0]) {
+    if (trk_file[0]) {
       if (failed || !fail_only)
         out_fmt(cls, "%-5s: (%s) %s:%d",
                 failed ? "FAIL" : "PASS", e->expect,
-                trk_tst_file, trk_tst_line);
+                trk_file, trk_line);
     } else {
       if (failed || !fail_only)
         out_fmt(cls, "%-5s: (%s)",
@@ -216,10 +217,10 @@ static void trk_close(void)
   }
 
   if (trk_expect_ignored) {
-    if (trk_tst_file[0])
+    if (trk_file[0])
       out_fmt("fail", "%-5s: (too many dbgtrk expectations; ignored %d after max %d) %s:%d",
               "FAIL", trk_expect_ignored, MAX_TRK_EXPECTS,
-              trk_tst_file, trk_tst_line);
+              trk_file, trk_line);
     else
       out_fmt("fail", "%-5s: (too many dbgtrk expectations; ignored %d after max %d)",
               "FAIL", trk_expect_ignored, MAX_TRK_EXPECTS);
@@ -264,20 +265,24 @@ static int tokenize(char *msg, char *tok[], int max)
  * M: allocation tracking
  * ---------------------------------------------------------------- */
 
-static void handle_M_colon(char *msg)
+static void handle_M_colon(char *msg, char *fail, size_t fsize)
 {
   char *t[8];
   int   nt;
 
+  fail[0] = '\0';
   if (has_prefix(msg, "M:")) msg += 2;
   nt = tokenize(msg, t, 8);
   if (nt < 1) return;
 
   if (!strcmp(t[0], "malloc") && nt >= 3)
     alloc_add(parse_ptr_token(t[2]), parse_size_token(t[1]));
-  else if (!strcmp(t[0], "free") && nt >= 2)
-    alloc_free(parse_ptr_token(t[1]));
-  else if (!strcmp(t[0], "calloc") && nt >= 4) {
+  else if (!strcmp(t[0], "free") && nt >= 2) {
+    uintptr_t ptr = parse_ptr_token(t[1]);
+    if (ptr && !alloc_free(ptr))
+      snprintf(fail, fsize, "%-5s: free 0x%" PRIXPTR " (not allocated or already freed)",
+               "FAIL", ptr);
+  } else if (!strcmp(t[0], "calloc") && nt >= 4) {
     size_t count = parse_size_token(t[1]);
     size_t size  = parse_size_token(t[2]);
     if (size && count > ((size_t)-1) / size)
@@ -289,10 +294,14 @@ static void handle_M_colon(char *msg)
     size_t    sz  = parse_size_token(t[2]);
     uintptr_t nw  = parse_ptr_token(t[3]);
     if (nw) {
-      if (old) alloc_free(old);
+      if (old && !alloc_free(old))
+        snprintf(fail, fsize, "%-5s: realloc 0x%" PRIXPTR " (not allocated or already freed)",
+                 "FAIL", old);
       alloc_add(nw, sz);
     } else if (old && sz == 0) {
-      alloc_free(old);
+      if (!alloc_free(old))
+        snprintf(fail, fsize, "%-5s: realloc 0x%" PRIXPTR " (not allocated or already freed)",
+                 "FAIL", old);
     }
   } else if (!strcmp(t[0], "strdup") && nt >= 4)
     alloc_add(parse_ptr_token(t[3]), parse_size_token(t[2]));
@@ -311,14 +320,20 @@ static int is_mem_check_op(const char *op)
          !strcmp(op, "memcpy")  || !strcmp(op, "memmove");
 }
 
-/* Returns 1 on PASS, 0 on FAIL. Writes result line to *out. */
+static int checks_source_bytes(const char *op)
+{
+  return !strcmp(op, "strcpy") || !strcmp(op, "strncpy") ||
+         !strcmp(op, "memcpy") || !strcmp(op, "memmove");
+}
+
+/* Returns 1 on PASS, 0 on FAIL, 2 on SKIP. Writes result line to *out. */
 static int check_M_question(char *msg, char *out, size_t osize)
 {
   char     *t[6];
   int       nt;
-  uintptr_t p1 = 0;
-  size_t    sz = 0, avail = 0;
-  int       ok = 1;
+  uintptr_t p1 = 0, p2 = 0;
+  size_t    sz = 0, avail = 0, src_avail = 0;
+  int       ok = 1, src_known = 0;
 
   *out = '\0';
   if (has_prefix(msg, "M?")) msg += 2;
@@ -335,8 +350,8 @@ static int check_M_question(char *msg, char *out, size_t osize)
     }
     p1 = parse_ptr_token(t[1]);
     ok = (p1 == 0) || alloc_find(p1, NULL);
-    snprintf(out, osize, "%-5s: pointer 0x%zX",
-             ok ? "PASS" : "FAIL", (size_t)p1);
+    snprintf(out, osize, "%-5s: pointer 0x%" PRIXPTR,
+             ok ? "PASS" : "FAIL", p1);
   } else if (!strcmp(t[0], "memset")) {
     if (nt < 3) {
       snprintf(out, osize, "FAIL: malformed M?memset record");
@@ -345,20 +360,40 @@ static int check_M_question(char *msg, char *out, size_t osize)
     p1 = parse_ptr_token(t[1]);
     sz = parse_size_token(t[2]);
     ok = alloc_find(p1, &avail);
-    ok = ok && (sz <= avail);
-    snprintf(out, osize, "%-5s: memset 0x%zX +%zu (buf=%zu)",
-             ok ? "PASS" : "FAIL", (size_t)p1, sz, avail);
+    if (!ok) {
+      snprintf(out, osize, "%-5s: memset 0x%" PRIXPTR " +%zu (untracked)",
+               "SKIP", p1, sz);
+      return 2;
+    }
+    ok = (sz <= avail);
+    snprintf(out, osize, "%-5s: memset 0x%" PRIXPTR " +%zu (buf=%zu)",
+             ok ? "PASS" : "FAIL", p1, sz, avail);
   } else if (is_mem_check_op(t[0])) {
     if (nt < 4) {
       snprintf(out, osize, "FAIL: malformed M?%s record", t[0]);
       return 0;
     }
     p1 = parse_ptr_token(t[1]);
+    p2 = parse_ptr_token(t[2]);
     sz = parse_size_token(t[3]);
     ok = alloc_find(p1, &avail);
-    if (ok && sz > avail) ok = 0;
-    snprintf(out, osize, "%-5s: %s 0x%zX +%zu (buf=%zu)",
-             ok ? "PASS" : "FAIL", t[0], (size_t)p1, sz, avail);
+    if (!ok) {
+      snprintf(out, osize, "%-5s: %s 0x%" PRIXPTR " +%zu (untracked)",
+               "SKIP", t[0], p1, sz);
+      return 2;
+    }
+    if (sz > avail) ok = 0;
+    if (ok && checks_source_bytes(t[0])) {
+      src_known = alloc_find(p2, &src_avail);
+      if (src_known && sz > src_avail) {
+        snprintf(out, osize, "%-5s: %s source 0x%" PRIXPTR " +%zu (buf=%zu)",
+                 "FAIL", t[0], p2, sz, src_avail);
+        return 0;
+      }
+    }
+    /* strcat/strncat sizes describe destination needs, not source reads. */
+    snprintf(out, osize, "%-5s: %s 0x%" PRIXPTR " +%zu (buf=%zu)",
+             ok ? "PASS" : "FAIL", t[0], p1, sz, avail);
   } else {
     snprintf(out, osize, "FAIL: unknown M? operation: %s", t[0]);
     return 0;
@@ -396,17 +431,25 @@ static void split_line(const char *raw, char *msg, size_t msize,
                        char *file, size_t fsize, int *line)
 {
   const char *sep = strrchr(raw, '\x0F');
+  char src_file[512];
+  int  src_line = 0;
+  int  has_src = 0;
+  size_t mlen;
 
   *line = 0;
   file[0] = '\0';
-  if (sep) {
-    size_t mlen = (size_t)(sep - raw);
+  if (sep)
+    has_src = parse_source(sep + 1, src_file, sizeof(src_file), &src_line);
+
+  if (sep && has_src) {
+    mlen = (size_t)(sep - raw);
     if (mlen >= msize) mlen = msize - 1;
     memcpy(msg, raw, mlen);
     msg[mlen] = '\0';
-    parse_source(sep + 1, file, fsize, line);
+    snprintf(file, fsize, "%s", src_file);
+    *line = src_line;
   } else {
-    size_t mlen = strlen(raw);
+    mlen = strlen(raw);
     if (mlen >= msize) mlen = msize - 1;
     memcpy(msg, raw, mlen);
     msg[mlen] = '\0';
@@ -515,6 +558,16 @@ static void html_push(const char *text, const char *cls)
   out_count++;
 }
 
+static void html_free(void)
+{
+  int i;
+  for (i = 0; i < out_count; i++)
+    free(out_lines[i].text);
+  free(out_lines);
+  out_lines = NULL;
+  out_count = out_cap = 0;
+}
+
 static void out_line(const char *cls, const char *line)
 {
   if (html_mode)
@@ -560,6 +613,15 @@ static void emit_ok(const char *msg, const char *file, int lnum, const char *cls
   emit_line(msg, file, lnum, cls);
 }
 
+static void emit_result(const char *result, const char *file, int lnum,
+                        const char *cls)
+{
+  if (file[0])
+    out_fmt(cls, "%s %s:%d", result, file, lnum);
+  else
+    out_line(cls, result);
+}
+
 /* ----------------------------------------------------------------
  * line processing — single code path for text and HTML
  * ---------------------------------------------------------------- */
@@ -578,8 +640,19 @@ static void process_line(const char *raw)
 
   split_line(tmp, msg, sizeof(msg), file, sizeof(file), &lnum);
 
+  /* --- track bookkeeping --------------------------------------- */
+  if (in_trk) {
+    if (!in_verbatim && has_prefix(msg, "K]")) {
+      trk_close();
+      emit_ok("K]", file, lnum, "trk");
+      return;
+    }
+    trk_scan_line(msg);
+  }
+
   /* --- verbatim close ------------------------------------------- */
-  if (strstr(tmp, "V]\x0E") || has_prefix(msg, "V]\x0E")) {
+  if (in_verbatim && (has_prefix(tmp, "V]\x0E") || has_prefix(msg, "V]\x0E"))) {
+    /* Program output whose own line starts with V]\x0E ends the block early. */
     in_verbatim = 0;
     emit_ok("V]", file, lnum, "verbatim");
     return;
@@ -591,23 +664,14 @@ static void process_line(const char *raw)
     return;
   }
 
-  /* --- track block ---------------------------------------------- */
-  if (in_trk) {
-    if (has_prefix(msg, "K]")) {
-      trk_close();
-      emit_ok("K]", file, lnum, "trk");
-      return;
-    }
-    trk_scan_line(msg);
-    return;
-  }
-
   /* --- M: alloc ------------------------------------------------- */
   if (has_prefix(msg, "M:")) {
     char saved[MAX_LINE];
+    char fail[512];
     snprintf(saved, sizeof(saved), "%s", msg);
-    handle_M_colon(msg);
+    handle_M_colon(msg, fail, sizeof(fail));
     emit_ok(saved, file, lnum, "memory");
+    if (fail[0]) emit_result(fail, file, lnum, "fail");
     return;
   }
 
@@ -615,36 +679,35 @@ static void process_line(const char *raw)
   if (has_prefix(msg, "M?")) {
     char saved[MAX_LINE];
     char result[512];
-    int  ok;
+    int  status;
+    const char *cls;
     snprintf(saved, sizeof(saved), "%s", msg);
-    ok = check_M_question(msg, result, sizeof(result));
-    if (!fail_only || !ok) {
-      emit_line(saved, file, lnum, ok ? "pass" : "fail");
-      if (file[0])
-        out_fmt(ok ? "pass" : "fail", "%s %s:%d", result, file, lnum);
-      else
-        out_line(ok ? "pass" : "fail", result);
+    status = check_M_question(msg, result, sizeof(result));
+    cls = status == 0 ? "fail" : (status == 2 ? "info" : "pass");
+    if (!fail_only || status == 0) {
+      emit_line(saved, file, lnum, cls);
+      emit_result(result, file, lnum, cls);
     }
     return;
   }
 
   /* --- check pass/fail ----------------------------------------- */
   if (has_prefix(msg, "P:")) { emit_ok(msg, file, lnum, "pass"); return; }
-  if (has_prefix(msg, "F:") && !has_prefix(msg, "F="))
-    { emit_fail(msg, file, lnum); return; }
+  if (has_prefix(msg, "F:")) { emit_fail(msg, file, lnum); return; }
   if (has_prefix(msg, "F=")) { emit_fail(msg, file, lnum); return; }
 
   /* --- track open ---------------------------------------------- */
   if (has_prefix(msg, "K[")) {
-    trk_open(msg);
+    trk_open(msg, file, lnum);
     emit_ok(msg, file, lnum, "trk");
     return;
   }
 
   /* --- test blocks --------------------------------------------- */
   if (has_prefix(msg, "T["))
-    { trk_set_tst(file, lnum); emit_ok(msg, file, lnum, "test"); return; }
-  if (has_prefix(msg, "T]")) { emit_ok(msg, file, lnum, "test"); return; }
+    { in_test++; emit_ok(msg, file, lnum, "test"); return; }
+  if (has_prefix(msg, "T]"))
+    { if (in_test > 0) in_test--; emit_ok(msg, file, lnum, "test"); return; }
 
   /* --- verbatim open ------------------------------------------- */
   if (has_prefix(msg, "V["))
@@ -730,12 +793,14 @@ static int process_stream(FILE *fp, const char *name)
     size_t len;
     lnum++;
     len = strlen(line);
-    if (len > 0 && line[len - 1] != '\n' && !feof(fp)) {
-      int ch;
-      diag("%s:%d: input line exceeds %d bytes", name, lnum, MAX_LINE - 1);
-      ok = 0;
-      do { ch = fgetc(fp); } while (ch != '\n' && ch != EOF);
-      continue;
+    if (len > 0 && line[len - 1] != '\n') {
+      int ch = fgetc(fp);
+      if (ch != EOF && ch != '\n') {
+        diag("%s:%d: input line exceeds %d bytes", name, lnum, MAX_LINE - 1);
+        ok = 0;
+        do { ch = fgetc(fp); } while (ch != '\n' && ch != EOF);
+        continue;
+      }
     }
     process_line(line);
   }
@@ -754,8 +819,11 @@ static void usage(FILE *fp, const char *argv0)
   fprintf(fp, "  -F  show only failures\n");
   fprintf(fp, "  -H  render static HTML report\n");
   fprintf(fp, "  -h  show this help and exit\n");
-  fprintf(fp, "  -v  show version and exit\n\n");
+  fprintf(fp, "  -v  show version and exit\n");
+  fprintf(fp, "  --  end option processing\n");
+  fprintf(fp, "  -   read from standard input\n\n");
   fprintf(fp, "  With no log files, dbglog reads from standard input.\n");
+  fprintf(fp, "  Exit codes: 0 ok, 2 usage error, 3 processing error.\n");
 }
 
 int main(int argc, char **argv)
@@ -766,8 +834,10 @@ int main(int argc, char **argv)
   fail_only = 0;
   in_verbatim = 0;
   in_trk = 0;
+  in_test = 0;
 
-  for (i = 1; i < argc && argv[i][0] == '-'; i++) {
+  for (i = 1; i < argc && argv[i][0] == '-' && strcmp(argv[i], "-"); i++) {
+    if (!strcmp(argv[i], "--")) { i++; break; }
     if (!strcmp(argv[i], "-h")) { usage(stdout, argv[0]); return 0; }
     if (!strcmp(argv[i], "-v")) { puts(DBGLOG_VERSION);     return 0; }
     if (!strcmp(argv[i], "-H")) { html_mode = 1; continue; }
@@ -781,7 +851,12 @@ int main(int argc, char **argv)
     ok = process_stream(stdin, "stdin");
   } else {
     for (; i < argc; i++) {
-      FILE *fp = fopen(argv[i], "r");
+      FILE *fp;
+      if (!strcmp(argv[i], "-")) {
+        if (!process_stream(stdin, "stdin")) ok = 0;
+        continue;
+      }
+      fp = fopen(argv[i], "r");
       if (!fp) {
         fprintf(stderr, "dbglog: cannot open %s\n", argv[i]);
         ok = 0;
@@ -792,17 +867,33 @@ int main(int argc, char **argv)
     }
   }
 
+  /* Unterminated blocks mean the log is truncated or corrupt: report them
+     on stderr with a failing exit status, and also in the report itself so
+     a saved report still shows that something was wrong. */
   if (in_trk) {
     diag("unterminated dbgtrk block at end of input");
+    out_fmt("fail", "%-5s: unterminated dbgtrk block at end of input", "FAIL");
     ok = 0;
     trk_close();
   }
   if (in_verbatim) {
     diag("unterminated verbatim block at end of input");
+    out_fmt("fail", "%-5s: unterminated verbatim block at end of input", "FAIL");
     ok = 0;
   }
+  if (in_test) {
+    diag("unterminated test block at end of input");
+    out_fmt("fail", "%-5s: unterminated test block at end of input", "FAIL");
+    ok = 0;
+  }
+  /* A leak is a finding about the analyzed program, so it belongs in the
+     report next to the other results, not among dbglog's own diagnostics.
+     It does not affect the exit status. */
+  if (alloc_count > 0)
+    out_fmt("fail", "%-5s: %d allocation(s) never freed", "LEAK", alloc_count);
 
   if (html_mode) render_html();
+  html_free();
 
   return ok ? 0 : 3;
 }
