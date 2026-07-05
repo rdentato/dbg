@@ -48,6 +48,7 @@
 #define _dbgtst DBG_OFF
 #define _dbgtrk DBG_OFF
 #define _dbginf DBG_OFF
+#define _dbgvrb DBG_OFF
 #define _dbgwrn DBG_OFF
 #define _dbgerr DBG_OFF
 #define _dbgchk DBG_OFF
@@ -55,7 +56,6 @@
 #define _dbgptr DBG_OFF
 #define _dbgclk DBG_OFF
 #define _dbgblk while(0)
-#define _dbgvrb(...) __VA_ARGS__
 
 // ## No DEBUG
 // If DEBUG is not defined, the dbgxxx symbol should still be defined,
