@@ -4,6 +4,8 @@
 
 The library is implemented in `src/dbg.h`. There is no library to link: include the header and compile with the preprocessor switches you need.
 
+The enabled `dbg` macros emit structured log records instead of analyzing or formatting those records inside the application. The `dbglog` tool must read the raw log to perform formatting, trace validation, memory validation, and report generation. This separation minimizes the runtime impact of the macros on the instrumented program.
+
 ## Quick Start
 
 Create `example.c`:
