@@ -1,0 +1,195 @@
+---
+name: dbg
+description: Validate C code, instrument invariants, diagnose bugs, and write and run unit/regression tests with dbg.h and dbglog. Use when developing or reviewing code that uses dbg. Preserve instrumentation with underscore-prefixed disabled macros rather than deleting it.
+---
+
+# dbg: validate code and write tests
+
+## Required workflow
+
+1. Identify the requested behavior, affected paths, invariants, and failure cases. Follow project change-approval rules; this skill authorizes no unrelated edits.
+2. **Validate code with `dbgchk`** for invariants and observable results. Reserve `dbgmst` for prerequisites whose failure makes testing unsafe. Keep mandatory input validation, error handling, and security checks in ordinary C: debug checks disappear in release builds.
+3. **Write/update runnable unit tests for every changed behavior:** named `dbgtst` cases with explicit `dbgchk` expectations covering normal, applicable boundary/error, and bug-regression cases. Reuse the existing framework and runner; add only the smallest approved log-aware check if needed.
+4. Build with `-DDEBUG=DBGLVL_TEST`, capture test `stderr`, and process it with `dbglog`. Require successful process statuses, no unexpected findings, and evidence that expected checks ran (see the gate below).
+5. Verify the affected production path builds and behaves correctly with `-DNDEBUG`; disabled assertions cannot verify it.
+6. Report commands, checked results, blockers, and untested behavior. Passing checks are evidence for exercised cases, not proof of correctness.
+
+Never disable assertions, weaken expectations, or remove tests to hide failures. Check deliberate failure fixtures against their exact expected findings; never ignore failures globally.
+
+## Build and macro reference
+
+Include `"dbg.h"` **after** standard/third-party headers, especially with allocation wrappers. It is header-only; no dbg library needs linking.
+
+| Build switch | Effect |
+| --- | --- |
+| `-DDEBUG=DBGLVL_ERROR` | `dbgerr`; level 0 |
+| `-DDEBUG=DBGLVL_WARN` | Errors and `dbgwrn`; level 1 |
+| `-DDEBUG=DBGLVL_INFO` | Errors, warnings, and `dbginf`; level 2 |
+| `-DDEBUG=DBGLVL_TEST` | Above plus checks, tests, traces, timing, verbatim markers, and `dbgblk`; level 3 |
+| `-DDEBUG_ALLOC` | Allocation/memory wrappers and `dbgptr`; implies error level if `DEBUG` is absent, not test level |
+| `-DNDEBUG` | Overrides and disables both `DEBUG` and `DEBUG_ALLOC` |
+
+Bare `-DDEBUG` normally selects 1: **tests stay disabled**. For tests with allocation tracing, use `-DDEBUG=DBGLVL_TEST -DDEBUG_ALLOC`.
+
+The test-level header uses POSIX `clock_gettime(CLOCK_MONOTONIC)`; strict C builds may need `-D_POSIX_C_SOURCE=200809L` before system headers. Verify the target's build setup, especially for embedded/non-POSIX ports.
+
+| Macro | Use |
+| --- | --- |
+| `dbgtst("case") { ... }` | Name a unit-test case; supplies neither `main` nor failure exit status |
+| `dbgchk(expr, "message", ...)` | Log PASS/FAIL and continue; does not change the process exit status |
+| `dbgmst(expr, "message", ...)` | Log the check and `abort()` on failure when enabled |
+| `dbgerr`, `dbgwrn`, `dbginf` | Severity-appropriate, printf-style diagnostics |
+| `dbgblk { ... }` | Run debug-only code at test level; skip its body when disabled |
+| `dbgtrk("=present", "!absent") { ... }` | Check substring presence/absence in the block's log using **dbglog**, not the application |
+| `dbgvrb("label") { ... }` | Mark intentional program `stderr` output so it is not parsed as dbg events |
+| `dbgclk("label") { ... }` | Report coarse monotonic elapsed milliseconds; not a correctness assertion |
+| `dbgptr(ptr)` | Emit a tracked-allocation pointer check with `DEBUG_ALLOC`; evaluated by dbglog |
+
+For portable pre-C23 checks, supply a literal message: `dbgchk(value == expected, "")`. Match format specifiers to argument types; never dereference an unchecked pointer for diagnostics.
+
+## Warning and error diagnostics
+
+Both accept printf-style arguments and append the source file/line:
+
+- `dbgwrn("message", ...)`: suspicious/recoverable conditions, such as using a fallback configuration. Enabled at `DBGLVL_WARN` and higher; rendered as `WARN :` and hidden by `dbglog -F`.
+- `dbgerr("message", ...)`: errors, such as rejected input or a required file failing to open. Enabled at every debug level, including `DBGLVL_ERROR`; rendered as `ERROR:` and retained by `-F`, so unexpected errors fail the report gate.
+
+Neither aborts, returns, changes process status, nor recovers. Implement error handling independently in ordinary C; disabled diagnostics do not evaluate arguments.
+
+## Timing and debug-only blocks
+
+### `dbgclk`: time work without disabling it
+
+`dbgclk` emits start and elapsed-millisecond records at test level. Here `values` contains `count` integers whose sum fits in `int`:
+
+```c
+int total = 0;
+dbgclk("sum %zu values", count) {
+  for (size_t i = 0; i < count; ++i) {
+    total += values[i];
+  }
+}
+```
+
+Include `<stddef.h>` before `dbg.h` for `size_t`. The work still runs below test level or with `_dbgclk`; only timing disappears. Use for coarse observations, not precise benchmarks or correctness assertions. Avoid exits that skip the closing marker (see safety rules).
+
+### `dbgblk`: execute debug-only work
+
+`dbgblk` runs its body only at test level. Using the same array:
+
+```c
+dbgblk {
+  for (size_t i = 0; i < count; ++i) {
+    dbginf("values[%zu]=%d", i, values[i]);
+  }
+}
+```
+
+Unlike `dbgclk`, this skips the loop below `DBGLVL_TEST` or with `NDEBUG`; `_dbgblk` skips it even at test level. Keep production state changes and required validation outside. Skipped bodies still need valid C declarations/types: this is not a preprocessor guard.
+
+## Write meaningful unit tests
+
+Keep test-only entry points in test files. Arrange inputs, call the function, then check the saved result. Never put required work solely in check/message arguments: disabled macros discard them.
+
+Example `test_add.c`; substitute the real function and approved requirements:
+
+```c
+#include "dbg.h"
+
+static int add(int a, int b) {
+  int result = a + b;
+  dbginf("add result=%d", result);
+  return result;
+}
+
+int main(void) {
+  dbgtst("zero inputs") {
+    int actual = add(0, 0);
+    dbgchk(actual == 0, "actual=%d", actual);
+  }
+  dbgtst("mixed signs") {
+    int actual = add(-2, 3);
+    dbgchk(actual == 1, "actual=%d", actual);
+  }
+  dbgtst("positive inputs and trace") {
+    dbgtrk("=add result=5", "!add result=0") {
+      int actual = add(2, 3);
+      dbgchk(actual == 5, "actual=%d", actual);
+    }
+  }
+  return 0;
+}
+```
+
+Expected: three direct and two trace checks. Overflow is unspecified here; derive further tests from the real contract, not an invented one.
+
+### Run and gate results
+
+**Zero exit status does not mean passing checks.** The test may return 0 after failed `dbgchk` calls; dbglog returns 0 despite failed checks/traces, memory violations, or leaks. Tool statuses 2 and 3 mean usage and processing errors.
+
+Keep program/tool statuses, raw logs, and reports separate. Avoid `./test 2>&1 | dbglog`: it can hide program failure and mix stdout with diagnostic events. Use approved output paths or a fresh disposable directory.
+
+From the dbg checkout root with `test_add.c` saved above, this POSIX shell gate retains artifacts for inspection:
+
+```sh
+set -eu
+make -C src all
+out=$(mktemp -d)
+printf 'dbg artifacts: %s\n' "$out"
+cc -std=c99 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -pedantic \
+  -DDEBUG=DBGLVL_TEST -Isrc test_add.c -o "$out/test_add"
+
+program_status=0
+"$out/test_add" >"$out/stdout.txt" 2>"$out/raw.log" || program_status=$?
+log_status=0
+./src/dbglog "$out/raw.log" >"$out/report.txt" 2>"$out/dbglog.err" || log_status=$?
+./src/dbglog -F "$out/raw.log" >"$out/findings.txt" 2>>"$out/dbglog.err" || log_status=$?
+
+[ "$program_status" -eq 0 ] || { printf 'test process failed\n' >&2; exit 1; }
+[ "$log_status" -eq 0 ] || { printf 'log processing failed\n' >&2; exit 1; }
+[ ! -s "$out/findings.txt" ] || { printf 'unexpected dbg findings; inspect %s\n' "$out" >&2; exit 1; }
+[ ! -s "$out/dbglog.err" ] || { printf 'dbglog diagnostics; inspect %s\n' "$out" >&2; exit 1; }
+passes=$(grep -c '^PASS :' "$out/report.txt" || :)
+[ "$passes" -eq 5 ] || { printf 'expected 5 passing checks, got %s\n' "$passes" >&2; exit 1; }
+
+cc -std=c99 -Wall -Wextra -pedantic -DNDEBUG -Isrc test_add.c -o "$out/test_add_release"
+"$out/test_add_release" >"$out/release.stdout" 2>"$out/release.stderr"
+[ ! -s "$out/release.stderr" ]
+```
+
+Adapt paths, compiler/linker flags, and expected counts. The release run is only a smoke check; also verify production behavior without dbg. Inspect warnings, including locals unused when checks disappear.
+
+Plain-text `-F` retains errors, failed checks/traces, memory failures, and leaks. Gate on its emptiness, not HTML (which always has markup). Generate optional HTML separately: `dbglog -H raw.log > report.html`.
+
+Validate the gate using disposable copies: a wrong expectation must fail despite program status 0; disabled assertions must fail the expected-count guard.
+
+Repository baseline: `make -C src all` and `make -C test runtest`. Intentional failures occur in the aggregate `test/test.log`: neither blanket no-findings gating nor `runtest` alone establishes success. New positive tests need explicit findings/coverage assertions.
+
+## Preserve instrumentation: disable, do not delete
+
+**Prefer prefixing temporarily unwanted instrumentation with `_`, not deleting/commenting it out.** Retain arguments; remove `_` to restore:
+
+```c
+_dbginf("parsed %zu records", count);
+_dbgchk(expensive_invariant(state), "state invariant");
+```
+
+Disabled forms: `_dbgerr`, `_dbgwrn`, `_dbginf`, `_dbgchk`, `_dbgmst`, `_dbgptr`, `_dbgtst`, `_dbgtrk`, `_dbgvrb`, `_dbgclk`, `_dbgblk`. Call arguments are discarded unevaluated; do not invent variants for unrelated functions.
+
+**Disabled markers leave bodies running:** `_dbgtst`, `_dbgtrk`, `_dbgvrb`, and `_dbgclk` suppress markers, not enclosed statements/checks. Only `dbgblk`/`_dbgblk` suppress debug-only bodies as described above; never move production work there.
+
+For grouped calls, change `#define DBG_PARSE DBG_ON` to `#define DBG_PARSE DBG_OFF`; `DBG_ON` is active only at test level. Use `NDEBUG` for a whole release build. These switches must not hide required failing assertions/tests.
+
+## Trace, block, and memory safety rules
+
+- No same-kind nesting of `dbgtst` or `dbgtrk`, even through called functions. A trace inside a test is supported.
+- In marker blocks, `break`/`goto`/`return` skip closing markers; `continue` ends the macro loop early. Brace outer `if`/`else` branches to prevent binding to an internal macro `if`.
+- Trace strings are literal `=substring`/`!substring`, not regexes or ordering constraints. Keep them short/deterministic: the parser stores eight, fails on extras, and truncates long strings. Results use the trace opening location.
+- Keep dbg messages single-line without framing byte `\x0F`. Wrap intentional multiline program `stderr` in `dbgvrb`; never start a body line with its reserved closing sequence `V]\x0E`.
+- Emission is not thread-safe; concurrent writers can interleave records. Corrupt/incomplete logs cannot establish correctness.
+- Use `DEBUG_ALLOC` deliberately for heap lifetimes, wrapped string/memory operations, and pointer ranges. It macro-wraps libc/POSIX names; function-pointer calls and uninstrumented translation units bypass tracking.
+- Memory validation is **post-processing, not protection**: real operations still run, and some wrappers inspect strings before logging. Never execute undefined behavior to test it; use synthetic raw logs like the repository's shell fixtures.
+- `dbgptr(NULL)` passes: check required non-nullness explicitly. Non-null untracked pointer checks fail, but implicit memory-operation checks on untracked destinations can yield `SKIP`, hidden by `-F`. Inspect full reports for expected memory PASS results.
+- Track all relevant allocations/frees and inspect leak findings; they do not change tool status. dbg is neither a memory-safety proof nor a replacement for required platform checks.
+
+Resolve documentation conflicts against the checked-out header, parser, and runnable tests. Do not copy obsolete raw markers or assume proposed features exist.
